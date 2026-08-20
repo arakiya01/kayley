@@ -1,4 +1,4 @@
-import { openDatabase, getMeta } from './db.js';
+import { openDatabase, getMeta, getFoundingDate } from './db.js';
 import { todayYearMonth } from './format.js';
 import * as dashboard from './views/dashboard.js';
 import * as ar from './views/ar.js';
@@ -56,8 +56,18 @@ function renderShell() {
   `;
 }
 
+function clampToFoundingDate() {
+  const founding = getFoundingDate();
+  if (!founding) return;
+  if (state.year * 12 + state.month < founding.year * 12 + founding.month) {
+    state.year = founding.year;
+    state.month = founding.month;
+  }
+}
+
 function renderView() {
   state.tab = currentTabFromHash();
+  clampToFoundingDate();
   saveUiState(state);
 
   document.querySelectorAll('nav.tabs a').forEach((a) => {

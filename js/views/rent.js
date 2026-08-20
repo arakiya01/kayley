@@ -1,7 +1,7 @@
 import { getRentUtilityEntry, upsertRentUtilityEntry, computeUtilityPersonalTotal, getMeta } from '../db.js';
 import { yen, monthLabel, last12Months } from '../format.js';
 import { renderMonthBar } from './monthbar.js';
-import { barChart, lineChart } from '../charts.js';
+import { lineChart } from '../charts.js';
 import { seriesColor } from '../colors.js';
 
 const FIELDS = [
@@ -124,8 +124,8 @@ export function render(container, ctx) {
       rentSeries.push(e ? e.rent_personal_fixed : 0);
       utilitySeries.push(e ? computeUtilityPersonalTotal(e) : 0);
     });
-    barChart(container.querySelector('#rent-trend-chart'), {
-      categories: xLabels,
+    lineChart(container.querySelector('#rent-trend-chart'), {
+      xLabels,
       series: [
         { label: '家賃個人負担', color: seriesColor(0), values: rentSeries },
         { label: '光熱費個人負担', color: seriesColor(1), values: utilitySeries },

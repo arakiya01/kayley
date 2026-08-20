@@ -1,9 +1,11 @@
 import {
   listClients, computeArLedger, getRentUtilityEntry, computeUtilityPersonalTotal,
   getOfficerPayEntry, resolveOfficerDeductions, getMeta, getMonthStatus, prevMonth,
+  listAttachments, addAttachment, removeAttachment,
 } from '../db.js';
 import { yen, monthLabel, escapeHtml } from '../format.js';
 import { renderMonthBar } from './monthbar.js';
+import * as gdrive from '../gdrive.js';
 
 const DEDUCTION_FIELDS = [
   { key: 'health_insurance', label: '健康保険' },
@@ -119,6 +121,23 @@ export function render(container, ctx) {
         </tfoot>
       </table>
     </div>
+
+    <div class="card">
+      <h2>証憑（領収書・請求書）</h2>
+      <div class="card-note no-print">
+        ${gdrive.isConnected()
+          ? 'あなたのGoogleドライブの「月次伝票 - 証憑」フォルダに保存されます。'
+          : 'Google Driveが未接続です。「設定」タブから接続すると、ここでファイルをアップロードできます。'}
+      </div>
+      <div class="toolbar no-print">
+        <label class="btn ghost" style="cursor:${gdrive.isConnected() ? 'pointer' : 'not-allowed'};${gdrive.isConnected() ? '' : 'opacity:0.45'}">
+          ＋ ファイルを追加
+          <input type="file" id="attachment-file" multiple style="display:none" ${gdrive.isConnected() ? '' : 'disabled'}>
+        </label>
+        <span id="attachment-upload-status" class="card-note" style="margin:0"></span>
+      </div>
+      <div id="attachment-list"></div>
+    </div>
   `;
 
   renderMonthBar(container.querySelector('#month-bar-slot'), {
@@ -126,4 +145,71 @@ export function render(container, ctx) {
   });
 
   container.querySelector('#print-btn').addEventListener('click', () => window.print());
+
+  function renderAttachmentList() {
+    const items = listAttachments(year, month);
+    const listEl = container.querySelector('#attachment-list');
+    if (items.length === 0) {
+      listEl.innerHTML = `<div class="card-note">まだファイルがありません。</div>`;
+      return;
+    }
+    listEl.innerHTML = `
+      <table class="ledger">
+        <tbody>
+          ${items.map((it) => `
+            <tr>
+              <td>
+                ${it.web_view_link ? `<a href="${escapeHtml(it.web_view_link)}" target="_blank" rel="noopener">${escapeHtml(it.name)}</a>` : escapeHtml(it.name)}
+              </td>
+              <td class="num no-print"><button class="btn ghost delete-attachment-btn" data-id="${it.id}" data-drive-id="${escapeHtml(it.drive_file_id)}">削除</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+    listEl.querySelectorAll('.delete-attachment-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('このファイルを削除します。よろしいですか？（Googleドライブ上のファイルも削除されます）')) return;
+        btn.disabled = true;
+        try {
+          if (gdrive.isConnected()) await gdrive.deleteFile(btn.dataset.driveId);
+          removeAttachment(Number(btn.dataset.id));
+          renderAttachmentList();
+        } catch (err) {
+          alert(err.message);
+          btn.disabled = false;
+        }
+      });
+    });
+  }
+
+  renderAttachmentList();
+
+  const fileInput = container.querySelector('#attachment-file');
+  if (fileInput) {
+    fileInput.addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files || []);
+      if (files.length === 0) return;
+      const statusEl = container.querySelector('#attachment-upload-status');
+      for (const file of files) {
+        statusEl.textContent = `アップロード中… ${file.name}`;
+        try {
+          const uploaded = await gdrive.uploadFile(file, { year, month });
+          addAttachment({
+            year, month,
+            drive_file_id: uploaded.id,
+            name: file.name,
+            mime_type: uploaded.mimeType,
+            web_view_link: uploaded.webViewLink,
+          });
+        } catch (err) {
+          statusEl.textContent = `失敗: ${file.name}（${err.message}）`;
+          return;
+        }
+      }
+      statusEl.textContent = '';
+      fileInput.value = '';
+      renderAttachmentList();
+    });
+  }
 }

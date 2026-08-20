@@ -69,6 +69,17 @@ CREATE TABLE IF NOT EXISTS month_status (
   finalized_at TEXT,
   PRIMARY KEY(year, month)
 );
+
+CREATE TABLE IF NOT EXISTS attachments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  year INTEGER NOT NULL,
+  month INTEGER NOT NULL,
+  drive_file_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  mime_type TEXT,
+  web_view_link TEXT,
+  uploaded_at TEXT NOT NULL
+);
 `;
 
 const DEFAULT_META = {
@@ -77,6 +88,8 @@ const DEFAULT_META = {
   default_utility_personal_pct: '40',
   founding_year: '',
   founding_month: '',
+  gdrive_client_id: '',
+  gdrive_folder_id: '',
 };
 
 let SQL = null;
@@ -351,6 +364,28 @@ export function setMonthFinalized(year, month, finalized) {
      ON CONFLICT(year, month) DO UPDATE SET finalized=excluded.finalized, finalized_at=excluded.finalized_at`,
     [year, month, finalized ? 1 : 0, finalized ? new Date().toISOString() : null]
   );
+}
+
+/* ---------------- attachments (証憑: 領収書・請求書) ---------------- */
+
+export function listAttachments(year, month) {
+  return all('SELECT * FROM attachments WHERE year=? AND month=? ORDER BY id', [year, month]);
+}
+
+export function addAttachment({ year, month, drive_file_id, name, mime_type, web_view_link }) {
+  run(
+    `INSERT INTO attachments (year, month, drive_file_id, name, mime_type, web_view_link, uploaded_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [year, month, drive_file_id, name, mime_type || null, web_view_link || null, new Date().toISOString()]
+  );
+}
+
+export function removeAttachment(id) {
+  run('DELETE FROM attachments WHERE id=?', [id]);
+}
+
+export function getAttachment(id) {
+  return one('SELECT * FROM attachments WHERE id=?', [id]);
 }
 
 export function exportBytes() {

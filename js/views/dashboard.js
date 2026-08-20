@@ -100,10 +100,6 @@ export function render(container, ctx) {
       <h2>売上推移（直近12ヶ月）</h2>
       <div id="sales-trend"></div>
     </div>
-    <div class="card">
-      <h2>売掛金残高推移（直近12ヶ月）</h2>
-      <div id="balance-trend"></div>
-    </div>
   `;
 
   renderMonthBar(container.querySelector('#month-bar-slot'), {
@@ -115,18 +111,12 @@ export function render(container, ctx) {
 
   if (clients.length === 0) {
     emptyChart(container.querySelector('#sales-trend'), '得意先が登録されるとここに表示されます');
-    emptyChart(container.querySelector('#balance-trend'), '得意先が登録されるとここに表示されます');
   } else {
     const salesTotals = months.map((m) => monthSalesAndPayment(clients, m.year, m.month).sales);
-    const balanceTotals = months.map((m) => monthSalesAndPayment(clients, m.year, m.month).balance);
 
     lineChart(container.querySelector('#sales-trend'), {
       xLabels,
       series: [{ label: '売上合計', color: seriesColor(1), values: salesTotals }],
-    });
-    lineChart(container.querySelector('#balance-trend'), {
-      xLabels,
-      series: [{ label: '売掛金残高合計', color: seriesColor(2), values: balanceTotals }],
     });
   }
 }

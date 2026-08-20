@@ -58,7 +58,7 @@ export function lineChart(container, opts) {
   const maxVal = niceMax(Math.max(1, ...series.flatMap(s => s.values)));
   const minVal = Math.min(0, ...series.flatMap(s => s.values));
 
-  const svg = el('svg', { viewBox: `0 0 ${width} ${height}`, width: '100%', height, role: 'img' });
+  const svg = el('svg', { viewBox: `0 0 ${width} ${height}`, width: '100%', height, preserveAspectRatio: 'none', role: 'img' });
 
   const x = (i) => padL + (xLabels.length === 1 ? plotW / 2 : (i / (xLabels.length - 1)) * plotW);
   const y = (v) => padT + plotH - ((v - minVal) / (maxVal - minVal || 1)) * plotH;
@@ -99,7 +99,7 @@ export function lineChart(container, opts) {
   const hoverLine = el('line', { x1: padL, x2: padL, y1: padT, y2: padT + plotH, stroke: 'var(--ink-soft, #4C5C70)', 'stroke-width': 1, 'stroke-dasharray': '3,3', opacity: 0 });
   svg.appendChild(hoverLine);
 
-  const hitArea = el('rect', { x: padL, y: padT, width: plotW, height: plotH, fill: 'transparent' });
+  const hitArea = el('rect', { x: 0, y: 0, width, height, fill: 'transparent' });
   hitArea.style.cursor = 'crosshair';
   svg.appendChild(hitArea);
 
@@ -162,7 +162,7 @@ export function barChart(container, opts) {
   const plotH = height - padT - padB;
 
   const maxVal = niceMax(Math.max(1, ...series.flatMap(s => s.values)));
-  const svg = el('svg', { viewBox: `0 0 ${width} ${height}`, width: '100%', height, role: 'img' });
+  const svg = el('svg', { viewBox: `0 0 ${width} ${height}`, width: '100%', height, preserveAspectRatio: 'none', role: 'img' });
 
   const groupW = plotW / categories.length;
   const barGap = 3;
