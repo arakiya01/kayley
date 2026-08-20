@@ -144,6 +144,7 @@ export function render(container, ctx) {
     const invoicesFor = (clientId) => monthAttachments.filter((a) => a.category === 'invoice' && a.client_id === clientId);
 
     slot.innerHTML = `
+      <div class="bulk-table-wrap">
       <table class="ledger">
         <thead>
           <tr>
@@ -165,18 +166,18 @@ export function render(container, ctx) {
               <td class="num"><input type="number" class="payment-input" value="${entry.payment || 0}" data-client="${client.id}"></td>
               <td class="num closing-cell">${yen(closing)}</td>
               <td>${agingBadge(streak)}</td>
-              <td class="no-print invoice-cell" data-client="${client.id}">
+              <td class="no-print invoice-cell" data-client="${client.id}" style="max-width:160px">
                 ${invoicesFor(client.id).map((it) => `
-                  <div style="display:flex;align-items:center;gap:4px;white-space:nowrap">
-                    ${it.web_view_link ? `<a href="${escapeHtml(it.web_view_link)}" target="_blank" rel="noopener" style="font-size:12px">${escapeHtml(it.name)}</a>` : `<span style="font-size:12px">${escapeHtml(it.name)}</span>`}
-                    <button class="btn ghost delete-invoice-btn" data-id="${it.id}" data-drive-id="${escapeHtml(it.drive_file_id)}" style="padding:1px 6px;font-size:11px">×</button>
+                  <div style="display:flex;align-items:center;gap:4px;max-width:160px">
+                    ${it.web_view_link ? `<a href="${escapeHtml(it.web_view_link)}" target="_blank" rel="noopener" title="${escapeHtml(it.name)}" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${escapeHtml(it.name)}</a>` : `<span title="${escapeHtml(it.name)}" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${escapeHtml(it.name)}</span>`}
+                    <button class="btn ghost delete-invoice-btn" data-id="${it.id}" data-drive-id="${escapeHtml(it.drive_file_id)}" style="padding:1px 6px;font-size:11px;flex-shrink:0">×</button>
                   </div>
                 `).join('')}
-                <label class="btn ghost" style="cursor:${gdriveConfigured ? 'pointer' : 'not-allowed'};${gdriveConfigured ? '' : 'opacity:0.45'};font-size:11px;padding:4px 8px;white-space:nowrap">
+                <label class="btn ghost" style="cursor:${gdriveConfigured ? 'pointer' : 'not-allowed'};${gdriveConfigured ? '' : 'opacity:0.45'};font-size:11px;padding:4px 8px;white-space:nowrap;display:inline-block">
                   ＋請求書
                   <input type="file" class="invoice-file-input" data-client="${client.id}" style="display:none" ${gdriveConfigured ? '' : 'disabled'}>
                 </label>
-                <span class="invoice-status card-note" style="margin:0;display:block" data-client="${client.id}"></span>
+                <span class="invoice-status card-note" style="margin:0;display:block;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" data-client="${client.id}"></span>
               </td>
             </tr>
           `).join('')}
@@ -193,6 +194,7 @@ export function render(container, ctx) {
           </tr>
         </tfoot>
       </table>
+      </div>
     `;
 
     slot.querySelectorAll('.sales-input, .payment-input').forEach((input) => {
