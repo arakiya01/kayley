@@ -1,5 +1,6 @@
 import {
-  listClients, upsertClient, getArEntry, upsertArEntry, computeArLedger, getMeta, getFoundingDate,
+  listClientsForMonth, listClientsForMonths,
+  upsertClient, getArEntry, upsertArEntry, computeArLedger, getMeta, getFoundingDate,
 } from '../db.js';
 import {
   yen, monthLabel, monthShort, last12Months, escapeHtml, fiscalYearStartOf, fiscalYearMonths,
@@ -33,7 +34,6 @@ function agingBadge(streak) {
 
 export function render(container, ctx) {
   const { year, month } = ctx;
-  const clients = listClients();
   const fyStartMonth = Number(getMeta('fiscal_year_start_month') || 4);
   if (bulkFyStartYear == null) bulkFyStartYear = fiscalYearStartOf(year, month, fyStartMonth);
 
@@ -113,7 +113,7 @@ export function render(container, ctx) {
   function renderTable() {
     if (bulkMode) { renderBulkTable(); return; }
     const slot = container.querySelector('#ar-table-slot');
-    const activeClients = listClients();
+    const activeClients = listClientsForMonth(year, month);
     if (activeClients.length === 0) {
       emptyChart(slot, 'まだ得意先が登録されていません。「＋ 得意先を追加」から始めましょう。');
       return;
@@ -189,8 +189,8 @@ export function render(container, ctx) {
 
   function renderBulkTable() {
     const slot = container.querySelector('#ar-table-slot');
-    const activeClients = listClients();
     const months = fiscalYearMonths(bulkFyStartYear, fyStartMonth);
+    const activeClients = listClientsForMonths(months);
 
     if (activeClients.length === 0) {
       slot.innerHTML = '';
@@ -261,8 +261,8 @@ export function render(container, ctx) {
   }
 
   function renderCharts() {
-    const activeClients = listClients();
     const months = last12Months(year, month);
+    const activeClients = listClientsForMonths(months);
     const xLabels = months.map((m) => monthLabel(m.year, m.month).replace(/^\d+年/, ''));
 
     const salesSeriesRaw = activeClients.map((c) => {

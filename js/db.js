@@ -202,6 +202,37 @@ export function listClients({ includeArchived = false } = {}) {
   return all(sql);
 }
 
+function mergeClientLists(active, extra) {
+  const seen = new Set(active.map((c) => c.id));
+  const merged = [...active];
+  extra.forEach((c) => {
+    if (!seen.has(c.id)) { merged.push(c); seen.add(c.id); }
+  });
+  return merged.sort((a, b) => (a.sort_order - b.sort_order) || (a.id - b.id));
+}
+
+function archivedClientsWithActivity(monthPairs) {
+  if (monthPairs.length === 0) return [];
+  const placeholders = monthPairs.map(() => '(a.year=? AND a.month=?)').join(' OR ');
+  const params = monthPairs.flatMap((m) => [m.year, m.month]);
+  return all(
+    `SELECT DISTINCT c.* FROM clients c
+     JOIN ar_entries a ON a.client_id = c.id
+     WHERE c.archived = 1 AND (a.sales != 0 OR a.payment != 0) AND (${placeholders})`,
+    params
+  );
+}
+
+// 休止済みの得意先でも、その月に売上・入金の実績があれば表示に含める
+// （最新の入力画面には出てこないが、過去の実績があった月では見えるようにするため）。
+export function listClientsForMonth(year, month) {
+  return mergeClientLists(listClients(), archivedClientsWithActivity([{ year, month }]));
+}
+
+export function listClientsForMonths(months) {
+  return mergeClientLists(listClients(), archivedClientsWithActivity(months));
+}
+
 export function upsertClient(client) {
   if (client.id) {
     run(

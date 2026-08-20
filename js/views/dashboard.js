@@ -1,5 +1,5 @@
 import {
-  listClients, computeArLedger, getRentUtilityEntry, computeUtilityPersonalTotal,
+  listClientsForMonths, computeArLedger, getRentUtilityEntry, computeUtilityPersonalTotal,
   getOfficerPayEntry, resolveOfficerDeductions, getMeta, getMonthStatus,
 } from '../db.js';
 import { yen, monthLabel, last12Months, addMonths } from '../format.js';
@@ -35,7 +35,8 @@ function netPayFor(year, month) {
 
 export function render(container, ctx) {
   const { year, month } = ctx;
-  const clients = listClients();
+  const months = last12Months(year, month);
+  const clients = listClientsForMonths(months);
   const companyName = getMeta('company_name') || '(会社名未設定)';
   const fyStart = Number(getMeta('fiscal_year_start_month') || 4);
 
@@ -106,7 +107,6 @@ export function render(container, ctx) {
     year, month, onChange: ctx.setMonth, showFinalize: false,
   });
 
-  const months = last12Months(year, month);
   const xLabels = months.map((m) => monthLabel(m.year, m.month).replace(/^\d+年/, ''));
 
   if (clients.length === 0) {

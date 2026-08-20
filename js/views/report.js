@@ -1,5 +1,5 @@
 import {
-  listClients, computeArLedger, getRentUtilityEntry, computeUtilityPersonalTotal,
+  listClientsForMonth, computeArLedger, getRentUtilityEntry, computeUtilityPersonalTotal,
   getOfficerPayEntry, resolveOfficerDeductions, getMeta, getMonthStatus, prevMonth,
   listAttachments, addAttachment, removeAttachment,
 } from '../db.js';
@@ -18,7 +18,7 @@ const DEDUCTION_FIELDS = [
 export function render(container, ctx) {
   const { year, month } = ctx;
   const companyName = getMeta('company_name') || '';
-  const clients = listClients();
+  const clients = listClientsForMonth(year, month);
   const status = getMonthStatus(year, month);
   const finalized = !!(status && status.finalized);
   const prev = prevMonth(year, month);
