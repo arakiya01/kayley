@@ -31,12 +31,13 @@ function applySurfaceScheme(root, cardColor) {
   if (isDark) {
     root.style.setProperty('--hairline', 'rgba(255,255,255,0.16)');
     root.style.setProperty('--grid-line', 'rgba(255,255,255,0.32)');
-    root.style.setProperty('--card-raised', 'color-mix(in srgb, var(--card) 80%, white 20%)');
   } else {
     root.style.setProperty('--hairline', '#DAD1B8');
     root.style.setProperty('--grid-line', '#C9BFA6');
-    root.style.setProperty('--card-raised', '#FFFFFF');
   }
+  // stat-tile・入力欄などの「一段明るい面」は、常にカードの色そのものを
+  // 白側へ少し寄せて作る。真っ白固定だと、原色に近いカード色の上で浮いて見えるため。
+  root.style.setProperty('--card-raised', 'color-mix(in srgb, white 22%, var(--card))');
 }
 
 // 文字色はユーザーの指定をそのまま採用し、控えめ・より控えめの2段階は
