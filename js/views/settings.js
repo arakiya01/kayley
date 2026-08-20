@@ -157,7 +157,9 @@ export function render(container) {
         <button class="btn ghost preset-btn" data-bg="#FBF8F1" data-card="#F7F1E3" data-ink="#22344A">帳簿（デフォルト）</button>
         <button class="btn ghost preset-btn" data-bg="#FDF6E3" data-card="#FBB936" data-ink="#1249CC">山吹×藍</button>
         <button class="btn ghost preset-btn" data-bg="#0F1720" data-card="#1B2836" data-ink="#E7ECF2">夜間モード</button>
+        <button class="btn ghost" id="theme-random-btn">🎲 ランダムに試す</button>
       </div>
+      <div class="card-note" style="margin:0">ランダムなので読みにくい組み合わせも出ます。上のコントラスト表示で確認しながら気に入ったら使ってください。</div>
 
       <div class="toolbar">
         <span class="spacer"></span>
@@ -291,6 +293,14 @@ export function render(container) {
       applyTheme();
       render(container);
     });
+  });
+  container.querySelector('#theme-random-btn').addEventListener('click', () => {
+    const randomHex = () => `#${Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0').toUpperCase()}`;
+    setMeta('theme_bg_color', randomHex());
+    setMeta('theme_card_color', randomHex());
+    setMeta('theme_ink_color', randomHex());
+    applyTheme();
+    render(container);
   });
   container.querySelector('#theme-reset-btn').addEventListener('click', () => {
     setMeta('theme_bg_color', '#FBF8F1');

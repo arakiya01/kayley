@@ -14,6 +14,8 @@
   --card-raised:  #FFFFFF;
   --grid-line:    #C9BFA6;   /* box-rule / grid lines */
   --hairline:     #DAD1B8;
+  --input-bg:     #FFFFFF;   /* 入力欄は配色に関わらず常に白＝編集できる場所だと分かるように */
+  --input-text:   #1A2233;
 
   /* ink */
   --ink:          #22344A;   /* ledger-ink navy: headings, primary text */
@@ -376,11 +378,11 @@ table.ledger td.num, table.ledger th.num {
 }
 
 input[type="number"], input[type="text"], select {
-  background: var(--card-raised);
+  background: var(--input-bg);
   border: 1px solid var(--grid-line);
   border-radius: 2px;
   padding: 7px 9px;
-  color: var(--ink);
+  color: var(--input-text);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   width: 100%;
