@@ -53,6 +53,37 @@ export async function connect(clientId) {
   });
 }
 
+// ページ読み込み時に、以前許可済みなら画面を出さずに黙って再接続を試みる。
+// 未許可・セッション切れなら何も起きず「未接続」のまま（失敗しても安全）。
+export async function trySilentReconnect(clientId) {
+  if (!clientId) return false;
+  try {
+    await loadGis();
+  } catch {
+    return false;
+  }
+  const attempt = new Promise((resolve) => {
+    try {
+      const tc = window.google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: SCOPE,
+        callback: (resp) => {
+          if (resp.error) { resolve(false); return; }
+          accessToken = resp.access_token;
+          tokenExpiresAt = Date.now() + (Number(resp.expires_in || 3600) - 60) * 1000;
+          resolve(true);
+        },
+        error_callback: () => resolve(false),
+      });
+      tc.requestAccessToken({ prompt: '' });
+    } catch {
+      resolve(false);
+    }
+  });
+  const timeout = new Promise((resolve) => setTimeout(() => resolve(false), 4000));
+  return Promise.race([attempt, timeout]);
+}
+
 export function disconnect() {
   if (accessToken && window.google && window.google.accounts) {
     window.google.accounts.oauth2.revoke(accessToken, () => {});
