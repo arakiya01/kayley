@@ -1,10 +1,14 @@
-import { getMeta, setMeta, listClients, upsertClient, archiveClient, exportBytes, importBytes } from '../db.js';
+import {
+  getMeta, setMeta, listClients, upsertClient, archiveClient, exportBytes, importBytes,
+  listThemePresets, addThemePreset, removeThemePreset,
+} from '../db.js';
 import { Storage } from '../storage.js';
 import { escapeHtml } from '../format.js';
 import * as gdrive from '../gdrive.js';
 import { applyTheme, fileToResizedDataUrl, contrastRatio } from '../theme.js';
 
 let showClientIdOverride = false;
+let showSavePresetForm = false;
 
 function randomHex() {
   return `#${Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0').toUpperCase()}`;
@@ -28,6 +32,8 @@ export function render(container) {
   const pattern = getMeta('theme_pattern') || 'grid';
   const bgImage = getMeta('theme_bg_image') || '';
   const bgImageTarget = getMeta('theme_bg_image_target') || 'background';
+
+  const savedPresets = listThemePresets();
 
   const contrastCard = contrastRatio(inkColor, cardColor);
   const contrastBg = contrastRatio(inkColor, bgColor);
@@ -165,6 +171,37 @@ export function render(container) {
         <button class="btn ghost" id="theme-random-readable-btn">🎲 読みやすいものだけ</button>
       </div>
       <div class="card-note" style="margin:0">「ランダムに試す」は読みにくい組み合わせも出ます。「読みやすいものだけ」は文字×カード・文字×背景の両方が「十分読みやすい」（7:1以上）になるまで振り直します。</div>
+
+      <div class="card-note" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--hairline)">お気に入り</div>
+      <div class="toolbar">
+        <button class="btn ghost" id="theme-save-preset-btn">＋ 今の配色を保存</button>
+        <span class="spacer"></span>
+      </div>
+      ${showSavePresetForm ? `
+        <div class="field-row">
+          <div class="field-label">名前<span class="hint">空欄でも保存できます</span></div>
+          <input type="text" id="new-preset-name" placeholder="例: 秋っぽいやつ">
+          <button class="btn primary" id="save-preset-confirm-btn">保存する</button>
+        </div>
+      ` : ''}
+      ${savedPresets.length === 0 ? `
+        <div class="card-note" style="margin:0">保存された配色はまだありません。気に入った組み合わせが見つかったら「＋ 今の配色を保存」で残せます。</div>
+      ` : `
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">
+          ${savedPresets.map((p) => `
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="display:flex;gap:2px;flex-shrink:0">
+                <span style="width:18px;height:18px;background:${p.bg_color};border:1px solid var(--grid-line);display:inline-block"></span>
+                <span style="width:18px;height:18px;background:${p.card_color};border:1px solid var(--grid-line);display:inline-block"></span>
+                <span style="width:18px;height:18px;background:${p.ink_color};border:1px solid var(--grid-line);display:inline-block"></span>
+              </div>
+              <span style="flex:1;font-size:13.5px">${escapeHtml(p.name || '（名前なし）')}</span>
+              <button class="btn ghost apply-preset-btn" data-id="${p.id}">使う</button>
+              <button class="btn ghost delete-preset-btn" data-id="${p.id}">削除</button>
+            </div>
+          `).join('')}
+        </div>
+      `}
 
       <div class="toolbar">
         <span class="spacer"></span>
@@ -321,6 +358,43 @@ export function render(container) {
     applyTheme();
     render(container);
   });
+
+  container.querySelector('#theme-save-preset-btn').addEventListener('click', () => {
+    showSavePresetForm = !showSavePresetForm;
+    render(container);
+  });
+  const savePresetConfirmBtn = container.querySelector('#save-preset-confirm-btn');
+  if (savePresetConfirmBtn) {
+    savePresetConfirmBtn.addEventListener('click', () => {
+      const name = container.querySelector('#new-preset-name').value.trim();
+      addThemePreset({
+        name,
+        bg_color: getMeta('theme_bg_color') || '#FBF8F1',
+        card_color: getMeta('theme_card_color') || '#F7F1E3',
+        ink_color: getMeta('theme_ink_color') || '#22344A',
+      });
+      showSavePresetForm = false;
+      render(container);
+    });
+  }
+  container.querySelectorAll('.apply-preset-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const preset = savedPresets.find((p) => p.id === Number(btn.dataset.id));
+      if (!preset) return;
+      setMeta('theme_bg_color', preset.bg_color);
+      setMeta('theme_card_color', preset.card_color);
+      setMeta('theme_ink_color', preset.ink_color);
+      applyTheme();
+      render(container);
+    });
+  });
+  container.querySelectorAll('.delete-preset-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      removeThemePreset(Number(btn.dataset.id));
+      render(container);
+    });
+  });
+
   container.querySelector('#theme-reset-btn').addEventListener('click', () => {
     setMeta('theme_bg_color', '#FBF8F1');
     setMeta('theme_card_color', '#F7F1E3');

@@ -80,6 +80,15 @@ CREATE TABLE IF NOT EXISTS attachments (
   web_view_link TEXT,
   uploaded_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS theme_presets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT,
+  bg_color TEXT NOT NULL,
+  card_color TEXT NOT NULL,
+  ink_color TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 `;
 
 const DEFAULT_META = {
@@ -392,6 +401,23 @@ export function removeAttachment(id) {
 
 export function getAttachment(id) {
   return one('SELECT * FROM attachments WHERE id=?', [id]);
+}
+
+/* ---------------- theme presets（お気に入りの配色） ---------------- */
+
+export function listThemePresets() {
+  return all('SELECT * FROM theme_presets ORDER BY id');
+}
+
+export function addThemePreset({ name, bg_color, card_color, ink_color }) {
+  run(
+    'INSERT INTO theme_presets (name, bg_color, card_color, ink_color, created_at) VALUES (?, ?, ?, ?, ?)',
+    [name || null, bg_color, card_color, ink_color, new Date().toISOString()]
+  );
+}
+
+export function removeThemePreset(id) {
+  run('DELETE FROM theme_presets WHERE id=?', [id]);
 }
 
 export function exportBytes() {
