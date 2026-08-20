@@ -174,7 +174,7 @@ nav.tabs a.active {
   font-size: 14px;
 }
 
-.month-bar .stepper {
+.stepper {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -184,18 +184,22 @@ nav.tabs a.active {
   padding: 4px 6px;
 }
 
-.month-bar button.step {
-  border: none;
-  background: transparent;
+.stepper button.step {
+  border: 1px solid var(--grid-line);
+  background: var(--card-raised);
   cursor: pointer;
-  font-size: 16px;
-  color: var(--ink-soft);
-  padding: 4px 8px;
-  border-radius: 2px;
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--ink);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
-.month-bar button.step:hover { background: var(--card); color: var(--ink); }
-.month-bar button.step:disabled { opacity: 0.3; cursor: not-allowed; }
-.month-bar button.step:disabled:hover { background: transparent; }
+.stepper button.step:hover { background: var(--hanko); color: #fff; border-color: var(--hanko); }
+.stepper button.step:disabled { opacity: 0.3; cursor: not-allowed; }
+.stepper button.step:disabled:hover { background: var(--card-raised); color: var(--ink); border-color: var(--grid-line); }
 
 .month-bar .current-month {
   font-family: var(--font-display);
@@ -584,7 +588,7 @@ input.computed {
 
 @media print {
   body { background: #fff !important; background-image: none !important; }
-  nav.tabs, .toolbar, .no-print, .month-bar .stepper button { display: none !important; }
+  nav.tabs, .toolbar, .no-print, .stepper button { display: none !important; }
   #app-shell { max-width: none; padding: 0; margin: 0; }
   .card { box-shadow: none; border: 1px solid #999; break-inside: avoid; }
   a { text-decoration: none; color: inherit; }
