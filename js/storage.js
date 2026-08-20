@@ -1,6 +1,8 @@
 // ブラウザ内永続化: OPFS があれば OPFS、なければ IndexedDB にフォールバック。
 // sqlite ファイルの生バイト列(Uint8Array)をまるごと保存/読込する。
 
+// 既存ユーザーの実データが紐づいているキーのため、アプリ名を変更しても意図的に変えない
+// （変えると、アプリからは前のデータが見えなくなってしまう）。
 const DB_FILENAME = 'geppyo.sqlite';
 const IDB_NAME = 'geppyo-store';
 const IDB_STORE = 'files';
@@ -89,7 +91,7 @@ export const Storage = {
     const a = document.createElement('a');
     const stamp = new Date().toISOString().slice(0, 10);
     a.href = url;
-    a.download = `geppyo-backup-${stamp}.sqlite`;
+    a.download = `kayley-backup-${stamp}.sqlite`;
     document.body.appendChild(a);
     a.click();
     a.remove();

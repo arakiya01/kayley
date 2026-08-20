@@ -17,7 +17,7 @@ const TABS = [
   { key: 'settings', label: '設定', mod: settings, needsMonth: false },
 ];
 
-const STATE_KEY = 'geppyo-ui-state';
+const STATE_KEY = 'kayley-ui-state';
 
 function loadUiState() {
   try {
@@ -45,8 +45,8 @@ function renderShell() {
   root.innerHTML = `
     <div class="masthead">
       <div class="wordmark">
-        <h1 class="display">月次伝票</h1>
-        <div class="sub">GEPPYO — MONTHLY LEDGER</div>
+        <h1 class="display">Kayley</h1>
+        <div class="sub">SOLO BOOKKEEPING</div>
       </div>
       <div class="company">${companyName ? companyName : '<a href="#/settings">会社名を設定する</a>'}</div>
     </div>

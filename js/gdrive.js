@@ -5,10 +5,10 @@
 import { getMeta, setMeta } from './db.js';
 
 const GIS_SRC = 'https://accounts.google.com/gsi/client';
-const FOLDER_NAME = '月次伝票 - 証憑';
+const FOLDER_NAME = 'Kayley - 証憑';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
-const SESSION_KEY = 'geppyo_gdrive_session';
+const SESSION_KEY = 'kayley_gdrive_session';
 
 let gisLoaded = null;
 let tokenClient = null;
@@ -169,7 +169,7 @@ export async function uploadFile(file, { year, month }) {
   const name = `${year}-${String(month).padStart(2, '0')}_${file.name}`;
   const metadata = { name, parents: [folderId] };
 
-  const boundary = `geppyo-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const boundary = `kayley-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const bodyParts = [
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`,
     `--${boundary}\r\nContent-Type: ${file.type || 'application/octet-stream'}\r\n\r\n`,
