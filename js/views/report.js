@@ -1,7 +1,7 @@
 import {
   listClientsForMonth, computeArLedger, getRentUtilityEntry, computeUtilityPersonalTotal,
   getOfficerPayEntry, resolveOfficerDeductions, getMeta, getMonthStatus, prevMonth,
-  listAttachments, addAttachment, removeAttachment,
+  listAttachments, addAttachment, removeAttachment, getClient,
 } from '../db.js';
 import { yen, monthLabel, escapeHtml } from '../format.js';
 import { renderMonthBar } from './monthbar.js';
@@ -127,12 +127,12 @@ export function render(container, ctx) {
       <h2>証憑（領収書・請求書）</h2>
       <div class="card-note no-print">
         ${gdriveConfigured
-          ? 'あなたのGoogleドライブの「Kayley」フォルダに保存されます。'
+          ? `あなたのGoogleドライブの「Kayley」フォルダに、${monthLabel(year, month)}分として整理して保存されます（請求書は売掛金タブの各得意先からもアップロードできます）。`
           : 'Google Driveが未設定です。「設定」タブから連携すると、ここでファイルをアップロードできます。'}
       </div>
       <div class="toolbar no-print">
         <label class="btn ghost" style="cursor:${gdriveConfigured ? 'pointer' : 'not-allowed'};${gdriveConfigured ? '' : 'opacity:0.45'}">
-          ＋ ファイルを追加
+          ＋ 領収書を追加
           <input type="file" id="attachment-file" multiple style="display:none" ${gdriveConfigured ? '' : 'disabled'}>
         </label>
         <span id="attachment-upload-status" class="card-note" style="margin:0"></span>
@@ -154,20 +154,33 @@ export function render(container, ctx) {
       listEl.innerHTML = `<div class="card-note">まだファイルがありません。</div>`;
       return;
     }
-    listEl.innerHTML = `
-      <table class="ledger">
-        <tbody>
-          ${items.map((it) => `
-            <tr>
-              <td>
-                ${it.web_view_link ? `<a href="${escapeHtml(it.web_view_link)}" target="_blank" rel="noopener">${escapeHtml(it.name)}</a>` : escapeHtml(it.name)}
-              </td>
-              <td class="num no-print"><button class="btn ghost delete-attachment-btn" data-id="${it.id}" data-drive-id="${escapeHtml(it.drive_file_id)}">削除</button></td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    `;
+
+    const groupHtml = (label, groupItems) => {
+      if (groupItems.length === 0) return '';
+      return `
+        <div class="card-note" style="margin:14px 0 4px">${label}</div>
+        <table class="ledger">
+          <tbody>
+            ${groupItems.map((it) => {
+              const client = it.client_id ? getClient(it.client_id) : null;
+              return `
+                <tr>
+                  <td>
+                    ${client ? `<span class="card-note" style="margin:0">${escapeHtml(client.name)}</span> ` : ''}
+                    ${it.web_view_link ? `<a href="${escapeHtml(it.web_view_link)}" target="_blank" rel="noopener">${escapeHtml(it.name)}</a>` : escapeHtml(it.name)}
+                  </td>
+                  <td class="num no-print"><button class="btn ghost delete-attachment-btn" data-id="${it.id}" data-drive-id="${escapeHtml(it.drive_file_id)}">削除</button></td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+    };
+
+    listEl.innerHTML = groupHtml('請求書', items.filter((it) => it.category === 'invoice'))
+      + groupHtml('領収書', items.filter((it) => it.category !== 'invoice'));
+
     listEl.querySelectorAll('.delete-attachment-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm('このファイルを削除します。よろしいですか？（Googleドライブ上のファイルも削除されます）')) return;
@@ -195,13 +208,14 @@ export function render(container, ctx) {
       for (const file of files) {
         statusEl.textContent = `アップロード中… ${file.name}`;
         try {
-          const uploaded = await gdrive.uploadFile(file, { year, month });
+          const uploaded = await gdrive.uploadFile(file, { year, month, category: 'receipt' });
           addAttachment({
             year, month,
             drive_file_id: uploaded.id,
             name: file.name,
             mime_type: uploaded.mimeType,
             web_view_link: uploaded.webViewLink,
+            category: 'receipt',
           });
         } catch (err) {
           statusEl.textContent = `失敗: ${file.name}（${err.message}）`;

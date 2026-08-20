@@ -78,7 +78,9 @@ CREATE TABLE IF NOT EXISTS attachments (
   name TEXT NOT NULL,
   mime_type TEXT,
   web_view_link TEXT,
-  uploaded_at TEXT NOT NULL
+  uploaded_at TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'receipt',
+  client_id INTEGER REFERENCES clients(id)
 );
 
 CREATE TABLE IF NOT EXISTS theme_presets (
@@ -120,6 +122,20 @@ async function initSqlJs() {
   return SQL;
 }
 
+// CREATE TABLE IF NOT EXISTS は既存テーブルへの列追加はしないため、
+// 既存ユーザーのDBにも後から追加した列を反映するための簡易マイグレーション。
+function migrateColumns() {
+  const ensureColumn = (table, column, definition) => {
+    const cols = db.exec(`PRAGMA table_info(${table})`);
+    const existingNames = cols.length ? cols[0].values.map((row) => row[1]) : [];
+    if (!existingNames.includes(column)) {
+      db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+  };
+  ensureColumn('attachments', 'category', "TEXT NOT NULL DEFAULT 'receipt'");
+  ensureColumn('attachments', 'client_id', 'INTEGER REFERENCES clients(id)');
+}
+
 export async function openDatabase() {
   await initSqlJs();
   const existing = await Storage.load();
@@ -129,6 +145,7 @@ export async function openDatabase() {
     db = new SQL.Database();
   }
   db.run(SCHEMA);
+  migrateColumns();
   for (const [k, v] of Object.entries(DEFAULT_META)) {
     db.run('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)', [k, v]);
   }
@@ -231,6 +248,10 @@ export function listClientsForMonth(year, month) {
 
 export function listClientsForMonths(months) {
   return mergeClientLists(listClients(), archivedClientsWithActivity(months));
+}
+
+export function getClient(id) {
+  return one('SELECT * FROM clients WHERE id=?', [id]);
 }
 
 export function upsertClient(client) {
@@ -418,11 +439,12 @@ export function listAttachments(year, month) {
   return all('SELECT * FROM attachments WHERE year=? AND month=? ORDER BY id', [year, month]);
 }
 
-export function addAttachment({ year, month, drive_file_id, name, mime_type, web_view_link }) {
+export function addAttachment({ year, month, drive_file_id, name, mime_type, web_view_link, category, client_id }) {
   run(
-    `INSERT INTO attachments (year, month, drive_file_id, name, mime_type, web_view_link, uploaded_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [year, month, drive_file_id, name, mime_type || null, web_view_link || null, new Date().toISOString()]
+    `INSERT INTO attachments (year, month, drive_file_id, name, mime_type, web_view_link, uploaded_at, category, client_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [year, month, drive_file_id, name, mime_type || null, web_view_link || null, new Date().toISOString(),
+     category || 'receipt', client_id || null]
   );
 }
 
@@ -458,6 +480,7 @@ export function exportBytes() {
 export async function importBytes(bytes) {
   db = new SQL.Database(bytes);
   db.run(SCHEMA);
+  migrateColumns();
   for (const [k, v] of Object.entries(DEFAULT_META)) {
     db.run('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)', [k, v]);
   }

@@ -121,7 +121,31 @@ function authHeader() {
   return { Authorization: `Bearer ${accessToken}` };
 }
 
-async function findFolder() {
+// 指定した名前のフォルダを、あれば返し、無ければ作る（parentIdが無ければDriveのどこにあってもよい＝ルートのKayleyフォルダ探索用、
+// parentIdがあればその直下だけを探す＝年月・種類のサブフォルダ用）。
+async function findOrCreateFolder(name, parentId) {
+  const parentClause = parentId ? ` and '${parentId}' in parents` : '';
+  const q = encodeURIComponent(`name='${name}' and mimeType='application/vnd.google-apps.folder' and trashed=false${parentClause}`);
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`, {
+    headers: authHeader(),
+  });
+  if (!res.ok) throw new Error('Google Driveのフォルダ検索に失敗しました');
+  const data = await res.json();
+  if (data.files && data.files.length > 0) return data.files[0].id;
+
+  const body = { name, mimeType: 'application/vnd.google-apps.folder' };
+  if (parentId) body.parents = [parentId];
+  const createRes = await fetch('https://www.googleapis.com/drive/v3/files?fields=id', {
+    method: 'POST',
+    headers: { ...authHeader(), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!createRes.ok) throw new Error('Google Driveのフォルダ作成に失敗しました');
+  const created = await createRes.json();
+  return created.id;
+}
+
+async function ensureRootFolder() {
   const cachedId = getMeta('gdrive_folder_id');
   if (cachedId) {
     const res = await fetch(`https://www.googleapis.com/drive/v3/files/${cachedId}?fields=id,trashed`, {
@@ -132,41 +156,24 @@ async function findFolder() {
       if (!data.trashed) return data.id;
     }
   }
-  const q = encodeURIComponent(`name='${FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`, {
-    headers: authHeader(),
-  });
-  if (!res.ok) throw new Error('Google Driveのフォルダ検索に失敗しました');
-  const data = await res.json();
-  if (data.files && data.files.length > 0) {
-    setMeta('gdrive_folder_id', data.files[0].id);
-    return data.files[0].id;
-  }
-  return null;
+  const id = await findOrCreateFolder(FOLDER_NAME, null);
+  setMeta('gdrive_folder_id', id);
+  return id;
 }
 
-async function createFolder() {
-  const res = await fetch('https://www.googleapis.com/drive/v3/files?fields=id', {
-    method: 'POST',
-    headers: { ...authHeader(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' }),
-  });
-  if (!res.ok) throw new Error('Google Driveのフォルダ作成に失敗しました');
-  const data = await res.json();
-  setMeta('gdrive_folder_id', data.id);
-  return data.id;
+// Kayley / YYYY-MM / 請求書・領収書 という構成でフォルダを掘る
+async function ensureMonthCategoryFolder(year, month, category) {
+  const rootId = await ensureRootFolder();
+  const monthName = `${year}-${String(month).padStart(2, '0')}`;
+  const monthId = await findOrCreateFolder(monthName, rootId);
+  const categoryName = category === 'invoice' ? '請求書' : '領収書';
+  return findOrCreateFolder(categoryName, monthId);
 }
 
-async function ensureFolder() {
-  const found = await findFolder();
-  if (found) return found;
-  return createFolder();
-}
-
-export async function uploadFile(file, { year, month }) {
+export async function uploadFile(file, { year, month, category = 'receipt', namePrefix = '' }) {
   await ensureConnected();
-  const folderId = await ensureFolder();
-  const name = `${year}-${String(month).padStart(2, '0')}_${file.name}`;
+  const folderId = await ensureMonthCategoryFolder(year, month, category);
+  const name = namePrefix ? `${namePrefix}_${file.name}` : file.name;
   const metadata = { name, parents: [folderId] };
 
   const boundary = `kayley-${Date.now()}-${Math.random().toString(36).slice(2)}`;

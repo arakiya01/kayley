@@ -1,6 +1,7 @@
 import {
   listClientsForMonth, listClientsForMonths,
   upsertClient, getArEntry, upsertArEntry, computeArLedger, getMeta, getFoundingDate,
+  listAttachments, addAttachment, removeAttachment,
 } from '../db.js';
 import {
   yen, monthLabel, monthShort, last12Months, escapeHtml, fiscalYearStartOf, fiscalYearMonths,
@@ -10,6 +11,7 @@ import { renderFySelector } from './fyselector.js';
 import { enableGridPaste } from './gridpaste.js';
 import { lineChart, emptyChart } from '../charts.js';
 import { seriesColor, foldSeriesArrays } from '../colors.js';
+import * as gdrive from '../gdrive.js';
 
 let bulkMode = false;
 let bulkFyStartYear = null;
@@ -114,6 +116,8 @@ export function render(container, ctx) {
     if (bulkMode) { renderBulkTable(); return; }
     const slot = container.querySelector('#ar-table-slot');
     const activeClients = listClientsForMonth(year, month);
+    const gdriveConfigured = !!getMeta('gdrive_client_id');
+    const monthAttachments = listAttachments(year, month);
     if (activeClients.length === 0) {
       emptyChart(slot, 'まだ得意先が登録されていません。「＋ 得意先を追加」から始めましょう。');
       return;
@@ -137,6 +141,8 @@ export function render(container, ctx) {
       return { client: c, opening, entry, closing, streak };
     });
 
+    const invoicesFor = (clientId) => monthAttachments.filter((a) => a.category === 'invoice' && a.client_id === clientId);
+
     slot.innerHTML = `
       <table class="ledger">
         <thead>
@@ -147,6 +153,7 @@ export function render(container, ctx) {
             <th class="num">入金</th>
             <th class="num">当月残高</th>
             <th>状況</th>
+            <th class="no-print">請求書</th>
           </tr>
         </thead>
         <tbody>
@@ -158,6 +165,19 @@ export function render(container, ctx) {
               <td class="num"><input type="number" class="payment-input" value="${entry.payment || 0}" data-client="${client.id}"></td>
               <td class="num closing-cell">${yen(closing)}</td>
               <td>${agingBadge(streak)}</td>
+              <td class="no-print invoice-cell" data-client="${client.id}">
+                ${invoicesFor(client.id).map((it) => `
+                  <div style="display:flex;align-items:center;gap:4px;white-space:nowrap">
+                    ${it.web_view_link ? `<a href="${escapeHtml(it.web_view_link)}" target="_blank" rel="noopener" style="font-size:12px">${escapeHtml(it.name)}</a>` : `<span style="font-size:12px">${escapeHtml(it.name)}</span>`}
+                    <button class="btn ghost delete-invoice-btn" data-id="${it.id}" data-drive-id="${escapeHtml(it.drive_file_id)}" style="padding:1px 6px;font-size:11px">×</button>
+                  </div>
+                `).join('')}
+                <label class="btn ghost" style="cursor:${gdriveConfigured ? 'pointer' : 'not-allowed'};${gdriveConfigured ? '' : 'opacity:0.45'};font-size:11px;padding:4px 8px;white-space:nowrap">
+                  ＋請求書
+                  <input type="file" class="invoice-file-input" data-client="${client.id}" style="display:none" ${gdriveConfigured ? '' : 'disabled'}>
+                </label>
+                <span class="invoice-status card-note" style="margin:0;display:block" data-client="${client.id}"></span>
+              </td>
             </tr>
           `).join('')}
         </tbody>
@@ -169,6 +189,7 @@ export function render(container, ctx) {
             <td class="num">${yen(rows.reduce((a, r) => a + (r.entry.payment || 0), 0))}</td>
             <td class="num">${yen(rows.reduce((a, r) => a + r.closing, 0))}</td>
             <td></td>
+            <td class="no-print"></td>
           </tr>
         </tfoot>
       </table>
@@ -183,6 +204,47 @@ export function render(container, ctx) {
         upsertArEntry({ client_id: clientId, year, month, sales, payment });
         renderTable();
         renderCharts();
+      });
+    });
+
+    slot.querySelectorAll('.invoice-file-input').forEach((input) => {
+      input.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const clientId = Number(input.dataset.client);
+        const client = activeClients.find((c) => c.id === clientId);
+        const statusEl = slot.querySelector(`.invoice-status[data-client="${clientId}"]`);
+        statusEl.textContent = 'アップロード中…';
+        try {
+          const uploaded = await gdrive.uploadFile(file, { year, month, category: 'invoice', namePrefix: client.name });
+          addAttachment({
+            year, month,
+            drive_file_id: uploaded.id,
+            name: file.name,
+            mime_type: uploaded.mimeType,
+            web_view_link: uploaded.webViewLink,
+            category: 'invoice',
+            client_id: clientId,
+          });
+          renderTable();
+        } catch (err) {
+          statusEl.textContent = err.message;
+        }
+      });
+    });
+
+    slot.querySelectorAll('.delete-invoice-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('この請求書を削除します。よろしいですか？（Googleドライブ上のファイルも削除されます）')) return;
+        btn.disabled = true;
+        try {
+          if (gdrive.isConnected()) await gdrive.deleteFile(btn.dataset.driveId);
+          removeAttachment(Number(btn.dataset.id));
+          renderTable();
+        } catch (err) {
+          alert(err.message);
+          btn.disabled = false;
+        }
       });
     });
   }
