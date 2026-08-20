@@ -24,6 +24,37 @@ export function contrastRatio(hexA, hexB) {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+function hexToRgb(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!m) return [0, 0, 0];
+  const c = m[1];
+  return [parseInt(c.slice(0, 2), 16), parseInt(c.slice(2, 4), 16), parseInt(c.slice(4, 6), 16)];
+}
+
+function toHex2(n) {
+  return Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+}
+
+// CSSのcolor-mix(in srgb, A p%, B (100-p)%) と同じ結果になる、sRGB成分の単純な線形補間。
+export function mixHex(hexA, pctA, hexB) {
+  const a = hexToRgb(hexA);
+  const b = hexToRgb(hexB);
+  const t = pctA / 100;
+  const r = a[0] * t + b[0] * (1 - t);
+  const g = a[1] * t + b[1] * (1 - t);
+  const bl = a[2] * t + b[2] * (1 - t);
+  return `#${toHex2(r)}${toHex2(g)}${toHex2(bl)}`.toUpperCase();
+}
+
+// 文字色の「控えめ」「より控えめ」段階を実際の色として計算する
+// （CSSのcolor-mix()に委ねず、ランダム生成時のコントラスト事前チェックと同じ値を使うため）。
+export function deriveInkVariants(inkColor, cardColor) {
+  return {
+    soft: mixHex(inkColor, 78, cardColor),
+    muted: mixHex(inkColor, 55, cardColor),
+  };
+}
+
 // 構造色（罫線・入力欄の下地）は、ユーザーが選ぶ文字色とは独立に、
 // カードの明るさだけを見て自動調整する（罫線が背景に埋もれないように）。
 function applySurfaceScheme(root, cardColor) {
@@ -42,10 +73,11 @@ function applySurfaceScheme(root, cardColor) {
 
 // 文字色はユーザーの指定をそのまま採用し、控えめ・より控えめの2段階は
 // カードの色に向けて混ぜることで作る（色相はそのまま、階層だけ作る）。
-function applyInk(root, inkColor) {
+function applyInk(root, inkColor, cardColor) {
+  const { soft, muted } = deriveInkVariants(inkColor, cardColor);
   root.style.setProperty('--ink', inkColor);
-  root.style.setProperty('--ink-soft', `color-mix(in srgb, ${inkColor} 78%, var(--card))`);
-  root.style.setProperty('--ink-muted', `color-mix(in srgb, ${inkColor} 55%, var(--card))`);
+  root.style.setProperty('--ink-soft', soft);
+  root.style.setProperty('--ink-muted', muted);
   root.style.setProperty('--btn-primary-text', relativeLuminance(inkColor) < 0.5 ? '#FFFFFF' : '#1A1A1A');
 }
 
@@ -61,7 +93,7 @@ export function applyTheme() {
   root.style.setProperty('--paper', bgColor);
   root.style.setProperty('--card', cardColor);
   applySurfaceScheme(root, cardColor);
-  applyInk(root, inkColor);
+  applyInk(root, inkColor, cardColor);
 
   document.body.classList.remove('pattern-grid', 'pattern-dots', 'pattern-none');
   document.body.classList.add(`pattern-${pattern}`);

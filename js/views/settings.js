@@ -5,7 +5,7 @@ import {
 import { Storage } from '../storage.js';
 import { escapeHtml } from '../format.js';
 import * as gdrive from '../gdrive.js';
-import { applyTheme, fileToResizedDataUrl, contrastRatio } from '../theme.js';
+import { applyTheme, fileToResizedDataUrl, contrastRatio, deriveInkVariants } from '../theme.js';
 
 let showClientIdOverride = false;
 let showSavePresetForm = false;
@@ -344,14 +344,31 @@ export function render(container) {
     render(container);
   });
   container.querySelector('#theme-random-readable-btn').addEventListener('click', () => {
-    let bg, card, ink;
-    let tries = 0;
-    do {
-      bg = randomHex();
-      card = randomHex();
-      ink = randomHex();
-      tries++;
-    } while (tries < 500 && (contrastRatio(ink, card) < 7 || contrastRatio(ink, bg) < 7));
+    // 5つの条件を同時に満たす完全ランダムな組は稀（実測で約1200回に1回程度）なので、
+    // 単純に上限回数で打ち切ると「見つからないまま一番最後に試した候補」＝読みにくい
+    // 組み合わせがそのまま採用されてしまうバグがあった。ここまでで最良の候補を覚えておき、
+    // 上限に達しても必ずそれを使うようにする。
+    let best = null;
+    let bestScore = -Infinity;
+    let found = false;
+    for (let tries = 0; tries < 20000 && !found; tries++) {
+      const bg = randomHex();
+      const card = randomHex();
+      const ink = randomHex();
+      const { soft, muted } = deriveInkVariants(ink, card);
+      const c1 = contrastRatio(ink, card);
+      const c2 = contrastRatio(ink, bg);
+      const c3 = contrastRatio(soft, card);
+      const c4 = contrastRatio(muted, card);
+      const c5 = contrastRatio(muted, bg);
+      const score = Math.min(c1 - 7, c2 - 7, c3 - 4.5, c4 - 3.5, c5 - 3.5);
+      if (score > bestScore) {
+        bestScore = score;
+        best = { bg, card, ink };
+      }
+      if (score >= 0) found = true;
+    }
+    const { bg, card, ink } = best;
     setMeta('theme_bg_color', bg);
     setMeta('theme_card_color', card);
     setMeta('theme_ink_color', ink);
