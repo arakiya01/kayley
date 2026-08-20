@@ -2,7 +2,7 @@ import { getMeta, setMeta, listClients, upsertClient, archiveClient, exportBytes
 import { Storage } from '../storage.js';
 import { escapeHtml } from '../format.js';
 import * as gdrive from '../gdrive.js';
-import { applyTheme, fileToResizedDataUrl } from '../theme.js';
+import { applyTheme, fileToResizedDataUrl, contrastRatio } from '../theme.js';
 
 let showClientIdOverride = false;
 
@@ -20,9 +20,19 @@ export function render(container) {
 
   const bgColor = getMeta('theme_bg_color') || '#FBF8F1';
   const cardColor = getMeta('theme_card_color') || '#F7F1E3';
+  const inkColor = getMeta('theme_ink_color') || '#22344A';
   const pattern = getMeta('theme_pattern') || 'grid';
   const bgImage = getMeta('theme_bg_image') || '';
   const bgImageTarget = getMeta('theme_bg_image_target') || 'background';
+
+  const contrastCard = contrastRatio(inkColor, cardColor);
+  const contrastBg = contrastRatio(inkColor, bgColor);
+  const contrastBadge = (ratio) => {
+    if (ratio >= 7) return `<span class="badge good">${ratio.toFixed(1)}:1 ・ 十分読みやすい</span>`;
+    if (ratio >= 4.5) return `<span class="badge good">${ratio.toFixed(1)}:1 ・ 通常の文字にOK</span>`;
+    if (ratio >= 3) return `<span class="badge warning">${ratio.toFixed(1)}:1 ・ 大きい文字のみ</span>`;
+    return `<span class="badge critical">${ratio.toFixed(1)}:1 ・ 読みにくい</span>`;
+  };
 
   container.innerHTML = `
     <div class="card">
@@ -120,6 +130,10 @@ export function render(container) {
         <input type="color" id="theme_card_color" value="${cardColor}" style="max-width:70px;padding:2px">
       </div>
       <div class="field-row">
+        <div class="field-label">文字色</div>
+        <input type="color" id="theme_ink_color" value="${inkColor}" style="max-width:70px;padding:2px">
+      </div>
+      <div class="field-row">
         <div class="field-label">背景パターン</div>
         <select id="theme_pattern">
           <option value="grid" ${pattern === 'grid' ? 'selected' : ''}>方眼（デフォルト）</option>
@@ -127,6 +141,24 @@ export function render(container) {
           <option value="none" ${pattern === 'none' ? 'selected' : ''}>なし（単色）</option>
         </select>
       </div>
+
+      <div class="card-note" style="margin-top:14px">
+        文字色とのコントラスト（
+        <a href="https://colorable.jxnblk.com/" target="_blank" rel="noopener">colorable</a>
+        と同じ考え方の簡易チェックです）
+      </div>
+      <div id="contrast-check" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
+        <span>文字 × カード: ${contrastBadge(contrastCard)}</span>
+        <span>文字 × 背景: ${contrastBadge(contrastBg)}</span>
+      </div>
+
+      <div class="card-note" style="margin-top:16px">配色プリセット</div>
+      <div class="toolbar" style="flex-wrap:wrap">
+        <button class="btn ghost preset-btn" data-bg="#FBF8F1" data-card="#F7F1E3" data-ink="#22344A">帳簿（デフォルト）</button>
+        <button class="btn ghost preset-btn" data-bg="#FDF6E3" data-card="#FBB936" data-ink="#1249CC">山吹×藍</button>
+        <button class="btn ghost preset-btn" data-bg="#0F1720" data-card="#1B2836" data-ink="#E7ECF2">夜間モード</button>
+      </div>
+
       <div class="toolbar">
         <span class="spacer"></span>
         <button class="btn ghost" id="theme-reset-btn">色をリセット</button>
@@ -222,21 +254,48 @@ export function render(container) {
     render(container);
   });
 
+  function updateContrastDisplay() {
+    const bg = container.querySelector('#theme_bg_color').value;
+    const card = container.querySelector('#theme_card_color').value;
+    const ink = container.querySelector('#theme_ink_color').value;
+    container.querySelector('#contrast-check').innerHTML = `
+      <span>文字 × カード: ${contrastBadge(contrastRatio(ink, card))}</span>
+      <span>文字 × 背景: ${contrastBadge(contrastRatio(ink, bg))}</span>
+    `;
+  }
+
   container.querySelector('#theme_bg_color').addEventListener('input', (e) => {
     setMeta('theme_bg_color', e.target.value);
     applyTheme();
+    updateContrastDisplay();
   });
   container.querySelector('#theme_card_color').addEventListener('input', (e) => {
     setMeta('theme_card_color', e.target.value);
     applyTheme();
+    updateContrastDisplay();
+  });
+  container.querySelector('#theme_ink_color').addEventListener('input', (e) => {
+    setMeta('theme_ink_color', e.target.value);
+    applyTheme();
+    updateContrastDisplay();
   });
   container.querySelector('#theme_pattern').addEventListener('change', (e) => {
     setMeta('theme_pattern', e.target.value);
     applyTheme();
   });
+  container.querySelectorAll('.preset-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      setMeta('theme_bg_color', btn.dataset.bg);
+      setMeta('theme_card_color', btn.dataset.card);
+      setMeta('theme_ink_color', btn.dataset.ink);
+      applyTheme();
+      render(container);
+    });
+  });
   container.querySelector('#theme-reset-btn').addEventListener('click', () => {
     setMeta('theme_bg_color', '#FBF8F1');
     setMeta('theme_card_color', '#F7F1E3');
+    setMeta('theme_ink_color', '#22344A');
     setMeta('theme_pattern', 'grid');
     applyTheme();
     render(container);

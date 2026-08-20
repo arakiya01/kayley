@@ -16,31 +16,42 @@ function relativeLuminance(hex) {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-// カードの色が暗い場合は、文字色一式を明るい側に自動で切り替えて可読性を保つ。
-function applyInkScheme(root, cardColor) {
+export function contrastRatio(hexA, hexB) {
+  const la = relativeLuminance(hexA);
+  const lb = relativeLuminance(hexB);
+  const lighter = Math.max(la, lb);
+  const darker = Math.min(la, lb);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+// 構造色（罫線・入力欄の下地）は、ユーザーが選ぶ文字色とは独立に、
+// カードの明るさだけを見て自動調整する（罫線が背景に埋もれないように）。
+function applySurfaceScheme(root, cardColor) {
   const isDark = relativeLuminance(cardColor) < 0.45;
   if (isDark) {
-    root.style.setProperty('--ink', '#F3EFE4');
-    root.style.setProperty('--ink-soft', '#CFC9BC');
-    root.style.setProperty('--ink-muted', '#A39C8E');
     root.style.setProperty('--hairline', 'rgba(255,255,255,0.16)');
     root.style.setProperty('--grid-line', 'rgba(255,255,255,0.32)');
     root.style.setProperty('--card-raised', 'color-mix(in srgb, var(--card) 80%, white 20%)');
-    root.style.setProperty('--btn-primary-text', '#1A2A1F');
   } else {
-    root.style.setProperty('--ink', '#22344A');
-    root.style.setProperty('--ink-soft', '#4C5C70');
-    root.style.setProperty('--ink-muted', '#7C8794');
     root.style.setProperty('--hairline', '#DAD1B8');
     root.style.setProperty('--grid-line', '#C9BFA6');
     root.style.setProperty('--card-raised', '#FFFFFF');
-    root.style.setProperty('--btn-primary-text', '#FFFFFF');
   }
+}
+
+// 文字色はユーザーの指定をそのまま採用し、控えめ・より控えめの2段階は
+// カードの色に向けて混ぜることで作る（色相はそのまま、階層だけ作る）。
+function applyInk(root, inkColor) {
+  root.style.setProperty('--ink', inkColor);
+  root.style.setProperty('--ink-soft', `color-mix(in srgb, ${inkColor} 78%, var(--card))`);
+  root.style.setProperty('--ink-muted', `color-mix(in srgb, ${inkColor} 55%, var(--card))`);
+  root.style.setProperty('--btn-primary-text', relativeLuminance(inkColor) < 0.5 ? '#FFFFFF' : '#1A1A1A');
 }
 
 export function applyTheme() {
   const bgColor = getMeta('theme_bg_color') || '#FBF8F1';
   const cardColor = getMeta('theme_card_color') || '#F7F1E3';
+  const inkColor = getMeta('theme_ink_color') || '#22344A';
   const pattern = getMeta('theme_pattern') || 'grid';
   const bgImage = getMeta('theme_bg_image') || '';
   const target = getMeta('theme_bg_image_target') || 'background';
@@ -48,7 +59,8 @@ export function applyTheme() {
   const root = document.documentElement;
   root.style.setProperty('--paper', bgColor);
   root.style.setProperty('--card', cardColor);
-  applyInkScheme(root, cardColor);
+  applySurfaceScheme(root, cardColor);
+  applyInk(root, inkColor);
 
   document.body.classList.remove('pattern-grid', 'pattern-dots', 'pattern-none');
   document.body.classList.add(`pattern-${pattern}`);
