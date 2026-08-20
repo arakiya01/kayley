@@ -1,0 +1,173 @@
+import {
+  getOfficerPayEntry, upsertOfficerPayEntry, resolveOfficerDeductions, prevMonth,
+} from '../db.js';
+import { yen, monthLabel, last12Months } from '../format.js';
+import { renderMonthBar } from './monthbar.js';
+import { lineChart } from '../charts.js';
+import { seriesColor } from '../colors.js';
+
+const DEDUCTION_FIELDS = [
+  { key: 'health_insurance', label: '健康保険' },
+  { key: 'nursing_care_insurance', label: '介護保険' },
+  { key: 'pension', label: '厚生年金' },
+  { key: 'child_support_levy', label: '子ども・子育て拠出金' },
+  { key: 'withholding_tax', label: '源泉所得税' },
+];
+
+export function render(container, ctx) {
+  const { year, month } = ctx;
+  const prev = prevMonth(year, month);
+  const deductions = resolveOfficerDeductions(year, month);
+
+  container.innerHTML = `
+    <div id="month-bar-slot"></div>
+    <div class="card">
+      <h2>役員報酬</h2>
+      <div class="field-row">
+        <div class="field-label">支給額</div>
+        <input type="number" id="gross_pay" step="1">
+        <span class="field-suffix">円</span>
+      </div>
+      <div class="toolbar">
+        <span class="spacer"></span>
+        <button class="btn ghost" id="copy-prev-btn">前月の保険料等をコピー</button>
+      </div>
+      ${DEDUCTION_FIELDS.map((f) => `
+        <div class="field-row">
+          <div class="field-label">${f.label}</div>
+          <input type="number" id="${f.key}" step="1">
+          <span class="field-suffix">円</span>
+        </div>
+      `).join('')}
+    </div>
+    <div class="card">
+      <h2>家賃・光熱費控除</h2>
+      <div class="card-note">
+        ${deductions.has_source
+          ? `${monthLabel(prev.year, prev.month)}分の家賃・光熱費台帳から自動反映しています（実績確定が翌月扱いのため）。`
+          : `${monthLabel(prev.year, prev.month)}分の家賃・光熱費データがまだ無いため、0円で計算しています。「家賃光熱費」タブで前月分を入力すると自動反映されます。`}
+      </div>
+      <div class="field-row">
+        <div class="field-label">自動反映を使う</div>
+        <input type="checkbox" id="use_auto" style="width:auto;justify-self:start">
+      </div>
+      <div id="manual-fields" style="display:none">
+        <div class="field-row">
+          <div class="field-label">家賃控除（手入力）</div>
+          <input type="number" id="manual_rent_deduction" step="1">
+          <span class="field-suffix">円</span>
+        </div>
+        <div class="field-row">
+          <div class="field-label">水道光熱費控除（手入力）</div>
+          <input type="number" id="manual_utility_deduction" step="1">
+          <span class="field-suffix">円</span>
+        </div>
+      </div>
+      <div class="card-grid" style="margin-top:14px">
+        <div class="stat-tile">
+          <div class="label">家賃控除</div>
+          <div class="value num" id="rent-deduction-display">0<span class="unit">円</span></div>
+        </div>
+        <div class="stat-tile">
+          <div class="label">水道光熱費控除</div>
+          <div class="value num" id="utility-deduction-display">0<span class="unit">円</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>差引支給額</h2>
+      <div class="card-grid">
+        <div class="stat-tile">
+          <div class="label">控除合計</div>
+          <div class="value num" id="deduction-total">0<span class="unit">円</span></div>
+        </div>
+        <div class="stat-tile">
+          <div class="label">差引支給額</div>
+          <div class="value num" id="net-pay">0<span class="unit">円</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>支給額・差引支給額の推移（直近12ヶ月）</h2>
+      <div id="pay-trend-chart"></div>
+    </div>
+  `;
+
+  renderMonthBar(container.querySelector('#month-bar-slot'), {
+    year, month, onChange: ctx.setMonth, showFinalize: true,
+  });
+
+  const existing = getOfficerPayEntry(year, month);
+  const state = existing ? { ...existing } : {
+    gross_pay: 0, health_insurance: 0, nursing_care_insurance: 0, pension: 0,
+    child_support_levy: 0, withholding_tax: 0, use_auto_deduction: 1,
+    manual_rent_deduction: 0, manual_utility_deduction: 0,
+  };
+
+  container.querySelector('#gross_pay').value = state.gross_pay;
+  DEDUCTION_FIELDS.forEach((f) => { container.querySelector(`#${f.key}`).value = state[f.key]; });
+  container.querySelector('#use_auto').checked = !!state.use_auto_deduction;
+  container.querySelector('#manual_rent_deduction').value = state.manual_rent_deduction;
+  container.querySelector('#manual_utility_deduction').value = state.manual_utility_deduction;
+  container.querySelector('#manual-fields').style.display = state.use_auto_deduction ? 'none' : 'block';
+
+  function save() {
+    const useAuto = container.querySelector('#use_auto').checked;
+    const entry = {
+      year, month,
+      gross_pay: Number(container.querySelector('#gross_pay').value) || 0,
+      use_auto_deduction: useAuto,
+      manual_rent_deduction: Number(container.querySelector('#manual_rent_deduction').value) || 0,
+      manual_utility_deduction: Number(container.querySelector('#manual_utility_deduction').value) || 0,
+    };
+    DEDUCTION_FIELDS.forEach((f) => { entry[f.key] = Number(container.querySelector(`#${f.key}`).value) || 0; });
+    upsertOfficerPayEntry(entry);
+    container.querySelector('#manual-fields').style.display = useAuto ? 'none' : 'block';
+    recompute(entry);
+  }
+
+  function recompute(entry) {
+    const d = resolveOfficerDeductions(year, month);
+    container.querySelector('#rent-deduction-display').innerHTML = `${yen(d.rent_deduction)}<span class="unit">円</span>`;
+    container.querySelector('#utility-deduction-display').innerHTML = `${yen(d.utility_deduction)}<span class="unit">円</span>`;
+    const deductionTotal = DEDUCTION_FIELDS.reduce((a, f) => a + (entry[f.key] || 0), 0) + d.rent_deduction + d.utility_deduction;
+    container.querySelector('#deduction-total').innerHTML = `${yen(deductionTotal)}<span class="unit">円</span>`;
+    container.querySelector('#net-pay').innerHTML = `${yen(entry.gross_pay - deductionTotal)}<span class="unit">円</span>`;
+    renderChart();
+  }
+
+  container.querySelectorAll('input').forEach((input) => {
+    input.addEventListener('input', save);
+  });
+
+  container.querySelector('#copy-prev-btn').addEventListener('click', () => {
+    const p = getOfficerPayEntry(prev.year, prev.month);
+    if (!p) return;
+    DEDUCTION_FIELDS.forEach((f) => { container.querySelector(`#${f.key}`).value = p[f.key]; });
+    save();
+  });
+
+  recompute(state);
+
+  function renderChart() {
+    const months = last12Months(year, month);
+    const xLabels = months.map((m) => monthLabel(m.year, m.month).replace(/^\d+年/, ''));
+    const grossSeries = [];
+    const netSeries = [];
+    months.forEach((m) => {
+      const e = getOfficerPayEntry(m.year, m.month);
+      const d = resolveOfficerDeductions(m.year, m.month);
+      const gross = e ? e.gross_pay : 0;
+      const total = e ? DEDUCTION_FIELDS.reduce((a, f) => a + (e[f.key] || 0), 0) + d.rent_deduction + d.utility_deduction : 0;
+      grossSeries.push(gross);
+      netSeries.push(gross - total);
+    });
+    lineChart(container.querySelector('#pay-trend-chart'), {
+      xLabels,
+      series: [
+        { label: '支給額', color: seriesColor(1), values: grossSeries },
+        { label: '差引支給額', color: seriesColor(0), values: netSeries },
+      ],
+    });
+  }
+}

@@ -1,0 +1,494 @@
+/* ===================================================================
+   月次伝票 (Geppyo) — design tokens
+   モチーフ: 振替伝票・帳簿台紙・朱印。桁枠と朱肉の赤は「確定」の重みを持つ。
+   =================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+:root {
+  color-scheme: light;
+
+  /* surfaces */
+  --paper:        #FBF8F1;   /* page plane */
+  --card:         #F7F1E3;   /* kraft card surface */
+  --card-raised:  #FFFFFF;
+  --grid-line:    #C9BFA6;   /* box-rule / grid lines */
+  --hairline:     #DAD1B8;
+
+  /* ink */
+  --ink:          #22344A;   /* ledger-ink navy: headings, primary text */
+  --ink-soft:     #4C5C70;
+  --ink-muted:    #7C8794;
+
+  /* accent — used ONLY for actions & the finalize stamp */
+  --hanko:        #B23A2E;
+  --hanko-ink:    #8C2C22;
+  --hanko-wash:   rgba(178, 58, 46, 0.08);
+
+  /* status (aging / warnings on AR balances) */
+  --status-warning:  #C98500;
+  --status-critical: #D03B3B;
+  --status-good:     #0ca30c;
+
+  /* categorical data series — fixed order, never reassigned */
+  --series-1: #3F7D3A; /* 苔 moss green */
+  --series-2: #2F5C99; /* 藍 indigo */
+  --series-3: #C1622B; /* 山吹 burnt orange */
+  --series-4: #6B4A8A; /* 江戸紫 violet-plum */
+
+  /* type */
+  --font-display: "Shippori Mincho", "Hiragino Mincho ProN", serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --radius: 3px;
+  --shadow-card: 0 1px 2px rgba(34, 52, 74, 0.06), 0 4px 14px rgba(34, 52, 74, 0.05);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background-image:
+    linear-gradient(var(--hairline) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hairline) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-attachment: fixed;
+  background-position: -1px -1px;
+}
+
+h1, h2, h3, .display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+
+.num, .tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+a { color: var(--ink); }
+
+button, input, select { font-family: inherit; font-size: inherit; }
+
+/* ---------- app shell ---------- */
+
+#app-shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 24px 80px;
+}
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 32px 4px 20px;
+  border-bottom: 3px double var(--grid-line);
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.masthead .wordmark {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
+.masthead .wordmark h1 {
+  font-size: 28px;
+}
+
+.masthead .wordmark .sub {
+  font-size: 12px;
+  color: var(--ink-muted);
+  letter-spacing: 0.12em;
+}
+
+.masthead .company {
+  font-size: 13px;
+  color: var(--ink-soft);
+  text-align: right;
+}
+
+nav.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 28px;
+  border-bottom: 1px solid var(--grid-line);
+  flex-wrap: wrap;
+}
+
+nav.tabs a {
+  display: inline-block;
+  padding: 10px 18px;
+  text-decoration: none;
+  color: var(--ink-soft);
+  font-size: 14px;
+  font-weight: 500;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+nav.tabs a:hover { color: var(--ink); }
+
+nav.tabs a.active {
+  color: var(--ink);
+  border-bottom-color: var(--hanko);
+  font-weight: 700;
+}
+
+/* month picker */
+.month-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 24px;
+  font-size: 14px;
+}
+
+.month-bar .stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--card-raised);
+  border: 1px solid var(--grid-line);
+  border-radius: var(--radius);
+  padding: 4px 6px;
+}
+
+.month-bar button.step {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--ink-soft);
+  padding: 4px 8px;
+  border-radius: 2px;
+}
+.month-bar button.step:hover { background: var(--card); color: var(--ink); }
+
+.month-bar .current-month {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 17px;
+  min-width: 8em;
+  text-align: center;
+}
+
+.finalize-badge {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---------- cards / sections ---------- */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--grid-line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 22px 24px;
+  margin-bottom: 20px;
+}
+
+.card > h2 {
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+
+.card .card-note {
+  font-size: 12.5px;
+  color: var(--ink-muted);
+  margin-bottom: 16px;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 16px;
+}
+
+/* stat tiles */
+.stat-tile {
+  background: var(--card-raised);
+  border: 1px solid var(--grid-line);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+}
+.stat-tile .label {
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin-bottom: 6px;
+}
+.stat-tile .value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.stat-tile .value .unit { font-size: 13px; font-weight: 400; color: var(--ink-muted); margin-left: 4px; }
+.stat-tile .delta { font-size: 12px; margin-top: 6px; }
+.stat-tile .delta.up { color: var(--status-good); }
+.stat-tile .delta.down { color: var(--status-critical); }
+
+/* ---------- tables (ledger style) ---------- */
+
+table.ledger {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+table.ledger th, table.ledger td {
+  border-bottom: 1px solid var(--hairline);
+  padding: 9px 10px;
+  text-align: right;
+}
+table.ledger th:first-child, table.ledger td:first-child {
+  text-align: left;
+}
+table.ledger thead th {
+  font-weight: 500;
+  color: var(--ink-muted);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  border-bottom: 2px solid var(--grid-line);
+}
+table.ledger tbody tr:hover { background: rgba(34,52,74,0.03); }
+table.ledger tfoot td {
+  font-weight: 700;
+  border-top: 2px solid var(--grid-line);
+  border-bottom: none;
+}
+table.ledger td.num, table.ledger th.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- forms ---------- */
+
+.field-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px 14px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.field-row:last-child { border-bottom: none; }
+.field-row .field-label {
+  font-size: 13.5px;
+  color: var(--ink-soft);
+}
+.field-row .field-label .hint {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-muted);
+  margin-top: 2px;
+}
+
+input[type="number"], input[type="text"], select {
+  background: var(--card-raised);
+  border: 1px solid var(--grid-line);
+  border-radius: 2px;
+  padding: 7px 9px;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  width: 100%;
+}
+input[type="text"] { font-family: var(--font-body); font-variant-numeric: normal; }
+input:focus, select:focus, button:focus-visible {
+  outline: 2px solid var(--hanko);
+  outline-offset: 1px;
+}
+input.computed {
+  background: var(--paper);
+  color: var(--ink-soft);
+  border-style: dashed;
+}
+
+.field-suffix { font-size: 12px; color: var(--ink-muted); }
+
+/* buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--grid-line);
+  background: var(--card-raised);
+  color: var(--ink);
+  border-radius: var(--radius);
+  padding: 9px 16px;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.btn:hover { border-color: var(--ink-soft); }
+.btn.primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+.btn.primary:hover { background: var(--ink-soft); }
+.btn.hanko-btn {
+  background: var(--hanko);
+  border-color: var(--hanko);
+  color: #fff;
+}
+.btn.hanko-btn:hover { background: var(--hanko-ink); }
+.btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-soft);
+}
+.btn.ghost:hover { color: var(--ink); text-decoration: underline; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.toolbar .spacer { flex: 1; }
+
+/* ---------- hanko stamp ---------- */
+
+.stamp {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: 2.5px solid var(--hanko);
+  color: var(--hanko);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: 0.15em;
+  transform: rotate(-6deg);
+  position: relative;
+  opacity: 0.35;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  flex-shrink: 0;
+}
+.stamp::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border: 1px solid var(--hanko);
+  border-radius: 50%;
+}
+.stamp.stamped {
+  opacity: 1;
+  animation: stamp-press 0.35s cubic-bezier(.2,1.4,.4,1);
+}
+@keyframes stamp-press {
+  0% { transform: rotate(-6deg) scale(1.9); opacity: 0; }
+  60% { transform: rotate(-6deg) scale(0.92); opacity: 1; }
+  100% { transform: rotate(-6deg) scale(1); opacity: 1; }
+}
+.stamp-status-text {
+  font-size: 12.5px;
+  color: var(--ink-muted);
+}
+.stamp-status-text strong { color: var(--hanko); }
+
+/* ---------- charts ---------- */
+
+.chart-wrap { width: 100%; overflow-x: auto; }
+.chart-legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-top: 10px;
+}
+.chart-legend .item { display: flex; align-items: center; gap: 6px; }
+.chart-legend .swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+.viz-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--ink);
+  color: #fff;
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 3px;
+  line-height: 1.5;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+  z-index: 20;
+  white-space: nowrap;
+}
+.viz-tooltip .t-row { display: flex; gap: 8px; justify-content: space-between; }
+.viz-tooltip .t-swatch { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 4px; }
+
+/* badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+.badge.warning { background: rgba(201,133,0,0.12); color: var(--status-warning); }
+.badge.critical { background: rgba(208,59,59,0.12); color: var(--status-critical); }
+.badge.good { background: rgba(12,163,12,0.12); color: var(--status-good); }
+
+/* empty states */
+.empty-state {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--ink-muted);
+}
+.empty-state .display { font-size: 18px; color: var(--ink-soft); margin-bottom: 8px; }
+
+/* responsive */
+@media (max-width: 720px) {
+  #app-shell { padding: 0 14px 60px; }
+  .masthead { flex-direction: column; align-items: flex-start; }
+  .field-row { grid-template-columns: 1fr; }
+  table.ledger { font-size: 12px; }
+}
+
+/* reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .stamp.stamped { animation: none; }
+  * { transition-duration: 0.001ms !important; }
+}
+
+/* ---------- print (monthly report → PDF) ---------- */
+
+@media print {
+  body { background: #fff !important; background-image: none !important; }
+  nav.tabs, .toolbar, .no-print, .month-bar .stepper button { display: none !important; }
+  #app-shell { max-width: none; padding: 0; margin: 0; }
+  .card { box-shadow: none; border: 1px solid #999; break-inside: avoid; }
+  a { text-decoration: none; color: inherit; }
+  @page { size: A4; margin: 14mm; }
+}

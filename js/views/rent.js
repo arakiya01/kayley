@@ -1,0 +1,130 @@
+import { getRentUtilityEntry, upsertRentUtilityEntry, computeUtilityPersonalTotal, getMeta } from '../db.js';
+import { yen, monthLabel, last12Months } from '../format.js';
+import { renderMonthBar } from './monthbar.js';
+import { lineChart, barChart } from '../charts.js';
+import { seriesColor } from '../colors.js';
+
+const FIELDS = [
+  { key: 'water', label: '水道', totalKey: 'water_total', pctKey: 'water_personal_pct' },
+  { key: 'gas', label: 'ガス', totalKey: 'gas_total', pctKey: 'gas_personal_pct' },
+  { key: 'electricity', label: '電気', totalKey: 'electricity_total', pctKey: 'electricity_personal_pct' },
+];
+
+export function render(container, ctx) {
+  const { year, month } = ctx;
+  const defaultPct = Number(getMeta('default_utility_personal_pct') || 40);
+
+  container.innerHTML = `
+    <div id="month-bar-slot"></div>
+    <div class="card">
+      <h2>家賃</h2>
+      <div class="card-note">全体の家賃実額と、個人負担分（固定額）を入力します。</div>
+      <div class="field-row">
+        <div class="field-label">家賃（全体・実額）</div>
+        <input type="number" id="rent_total" step="1">
+        <span class="field-suffix">円</span>
+      </div>
+      <div class="field-row">
+        <div class="field-label">家賃（個人負担・固定）<span class="hint">按分契約上の固定額</span></div>
+        <input type="number" id="rent_personal_fixed" step="1">
+        <span class="field-suffix">円</span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>光熱費</h2>
+      <div class="card-note">全体の請求額と、個人負担割合（％）から個人負担額を自動計算します。</div>
+      ${FIELDS.map((f) => `
+        <div class="field-row">
+          <div class="field-label">${f.label}（全体）</div>
+          <input type="number" id="${f.totalKey}" step="1">
+          <span class="field-suffix">円</span>
+          <input type="number" id="${f.pctKey}" step="1" style="max-width:90px">
+          <span class="field-suffix">％負担 → <span class="num" id="${f.key}-personal">0</span>円</span>
+        </div>
+      `).join('')}
+    </div>
+    <div class="card">
+      <h2>当月の個人負担まとめ</h2>
+      <div class="card-note">この金額は、翌月の役員報酬明細で自動的に控除項目として反映されます（実績確定が翌月になるため）。</div>
+      <div class="card-grid">
+        <div class="stat-tile">
+          <div class="label">光熱費 個人負担計</div>
+          <div class="value num" id="utility-personal-total">0<span class="unit">円</span></div>
+        </div>
+        <div class="stat-tile">
+          <div class="label">家賃・光熱費 個人負担合計</div>
+          <div class="value num" id="grand-personal-total">0<span class="unit">円</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>個人負担額の推移（直近12ヶ月）</h2>
+      <div id="rent-trend-chart"></div>
+    </div>
+  `;
+
+  renderMonthBar(container.querySelector('#month-bar-slot'), {
+    year, month, onChange: ctx.setMonth, showFinalize: true,
+  });
+
+  const existing = getRentUtilityEntry(year, month);
+  const state = existing ? { ...existing } : {
+    rent_total: 0, rent_personal_fixed: 0,
+    water_total: 0, water_personal_pct: defaultPct,
+    gas_total: 0, gas_personal_pct: defaultPct,
+    electricity_total: 0, electricity_personal_pct: defaultPct,
+  };
+
+  container.querySelector('#rent_total').value = state.rent_total;
+  container.querySelector('#rent_personal_fixed').value = state.rent_personal_fixed;
+  FIELDS.forEach((f) => {
+    container.querySelector(`#${f.totalKey}`).value = state[f.totalKey];
+    container.querySelector(`#${f.pctKey}`).value = state[f.pctKey];
+  });
+
+  function recomputeAndSave() {
+    const entry = {
+      year, month,
+      rent_total: Number(container.querySelector('#rent_total').value) || 0,
+      rent_personal_fixed: Number(container.querySelector('#rent_personal_fixed').value) || 0,
+    };
+    FIELDS.forEach((f) => {
+      entry[f.totalKey] = Number(container.querySelector(`#${f.totalKey}`).value) || 0;
+      entry[f.pctKey] = Number(container.querySelector(`#${f.pctKey}`).value) || 0;
+    });
+    upsertRentUtilityEntry(entry);
+
+    FIELDS.forEach((f) => {
+      const personal = Math.round(entry[f.totalKey] * entry[f.pctKey] / 100);
+      container.querySelector(`#${f.key}-personal`).textContent = yen(personal);
+    });
+    const utilityPersonalTotal = computeUtilityPersonalTotal(entry);
+    container.querySelector('#utility-personal-total').innerHTML = `${yen(utilityPersonalTotal)}<span class="unit">円</span>`;
+    container.querySelector('#grand-personal-total').innerHTML = `${yen(utilityPersonalTotal + entry.rent_personal_fixed)}<span class="unit">円</span>`;
+    renderChart();
+  }
+
+  container.querySelectorAll('input').forEach((input) => {
+    input.addEventListener('input', recomputeAndSave);
+  });
+  recomputeAndSave();
+
+  function renderChart() {
+    const months = last12Months(year, month);
+    const xLabels = months.map((m) => monthLabel(m.year, m.month).replace(/^\d+年/, ''));
+    const rentSeries = [];
+    const utilitySeries = [];
+    months.forEach((m) => {
+      const e = getRentUtilityEntry(m.year, m.month);
+      rentSeries.push(e ? e.rent_personal_fixed : 0);
+      utilitySeries.push(e ? computeUtilityPersonalTotal(e) : 0);
+    });
+    barChart(container.querySelector('#rent-trend-chart'), {
+      categories: xLabels,
+      series: [
+        { label: '家賃個人負担', color: seriesColor(0), values: rentSeries },
+        { label: '光熱費個人負担', color: seriesColor(1), values: utilitySeries },
+      ],
+    });
+  }
+}
