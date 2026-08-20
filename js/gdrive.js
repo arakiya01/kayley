@@ -8,10 +8,38 @@ const GIS_SRC = 'https://accounts.google.com/gsi/client';
 const FOLDER_NAME = '月次伝票 - 証憑';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
+const SESSION_KEY = 'geppyo_gdrive_session';
+
 let gisLoaded = null;
 let tokenClient = null;
 let accessToken = null;
 let tokenExpiresAt = 0;
+
+// sessionStorage＝このブラウザタブを閉じるまでだけ有効。リロードしても消えないので、
+// トークンがまだ生きている間はGoogleに問い合わせ直さず、そのまま「接続済み」に復元できる。
+(function restoreFromSession() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (saved.expiresAt > Date.now()) {
+      accessToken = saved.accessToken;
+      tokenExpiresAt = saved.expiresAt;
+    } else {
+      sessionStorage.removeItem(SESSION_KEY);
+    }
+  } catch {
+    /* ignore */
+  }
+})();
+
+function saveToSession() {
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ accessToken, expiresAt: tokenExpiresAt }));
+  } catch {
+    /* ignore (private browsing等でsessionStorageが使えない場合) */
+  }
+}
 
 function loadGis() {
   if (gisLoaded) return gisLoaded;
@@ -44,6 +72,7 @@ function requestToken(clientId, prompt) {
         if (resp.error) { reject(new Error(resp.error)); return; }
         accessToken = resp.access_token;
         tokenExpiresAt = Date.now() + (Number(resp.expires_in || 3600) - 60) * 1000;
+        saveToSession();
         resolve();
       },
       error_callback: (err) => reject(new Error(err.message || '認証がキャンセルされました')),
@@ -70,6 +99,7 @@ export function disconnect() {
   }
   accessToken = null;
   tokenExpiresAt = 0;
+  try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
 }
 
 function authHeader() {
