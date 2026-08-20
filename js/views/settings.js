@@ -6,6 +6,10 @@ import { applyTheme, fileToResizedDataUrl, contrastRatio } from '../theme.js';
 
 let showClientIdOverride = false;
 
+function randomHex() {
+  return `#${Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0').toUpperCase()}`;
+}
+
 export function render(container) {
   const companyName = getMeta('company_name') || '';
   const fyStart = getMeta('fiscal_year_start_month') || '4';
@@ -158,8 +162,9 @@ export function render(container) {
         <button class="btn ghost preset-btn" data-bg="#FDF6E3" data-card="#FBB936" data-ink="#1249CC">山吹×藍</button>
         <button class="btn ghost preset-btn" data-bg="#0F1720" data-card="#1B2836" data-ink="#E7ECF2">夜間モード</button>
         <button class="btn ghost" id="theme-random-btn">🎲 ランダムに試す</button>
+        <button class="btn ghost" id="theme-random-readable-btn">🎲 読みやすいものだけ</button>
       </div>
-      <div class="card-note" style="margin:0">ランダムなので読みにくい組み合わせも出ます。上のコントラスト表示で確認しながら気に入ったら使ってください。</div>
+      <div class="card-note" style="margin:0">「ランダムに試す」は読みにくい組み合わせも出ます。「読みやすいものだけ」は文字×カード・文字×背景の両方が「十分読みやすい」（7:1以上）になるまで振り直します。</div>
 
       <div class="toolbar">
         <span class="spacer"></span>
@@ -295,10 +300,24 @@ export function render(container) {
     });
   });
   container.querySelector('#theme-random-btn').addEventListener('click', () => {
-    const randomHex = () => `#${Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0').toUpperCase()}`;
     setMeta('theme_bg_color', randomHex());
     setMeta('theme_card_color', randomHex());
     setMeta('theme_ink_color', randomHex());
+    applyTheme();
+    render(container);
+  });
+  container.querySelector('#theme-random-readable-btn').addEventListener('click', () => {
+    let bg, card, ink;
+    let tries = 0;
+    do {
+      bg = randomHex();
+      card = randomHex();
+      ink = randomHex();
+      tries++;
+    } while (tries < 500 && (contrastRatio(ink, card) < 7 || contrastRatio(ink, bg) < 7));
+    setMeta('theme_bg_color', bg);
+    setMeta('theme_card_color', card);
+    setMeta('theme_ink_color', ink);
     applyTheme();
     render(container);
   });
