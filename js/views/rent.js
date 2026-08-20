@@ -1,8 +1,9 @@
-import { getRentUtilityEntry, upsertRentUtilityEntry, computeUtilityPersonalTotal, getMeta } from '../db.js';
+import { getRentUtilityEntry, upsertRentUtilityEntry, computeUtilityPersonalTotal, getMeta, getFoundingDate } from '../db.js';
 import {
   yen, monthLabel, monthShort, last12Months, fiscalYearStartOf, fiscalYearMonths,
 } from '../format.js';
 import { renderMonthBar } from './monthbar.js';
+import { renderFySelector } from './fyselector.js';
 import { lineChart } from '../charts.js';
 import { seriesColor } from '../colors.js';
 
@@ -191,14 +192,7 @@ export function render(container, ctx) {
 
     slot.innerHTML = `
       <div class="card">
-        <div class="toolbar" style="margin-bottom:10px">
-          <div class="stepper">
-            <button class="btn ghost step" data-dir="-1">‹</button>
-            <div class="current-month">${monthLabel(months[0].year, months[0].month)} 〜 ${monthLabel(months[11].year, months[11].month)}</div>
-            <button class="btn ghost step" data-dir="1">›</button>
-          </div>
-          <span class="card-note" style="margin:0">1年度分の家賃・光熱費をまとめて入力できます。％欄は未入力ならデフォルト（${defaultPct}%）になります。</span>
-        </div>
+        <div id="fy-selector-slot"></div>
         <div class="bulk-table-wrap">
           <table class="ledger bulk-grid">
             <thead>
@@ -225,11 +219,15 @@ export function render(container, ctx) {
       </div>
     `;
 
-    slot.querySelectorAll('.step').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        bulkFyStartYear += Number(btn.dataset.dir);
+    renderFySelector(slot.querySelector('#fy-selector-slot'), {
+      fyStartYear: bulkFyStartYear,
+      fyStartMonth,
+      foundingDate: getFoundingDate(),
+      noteText: `1年度分の家賃・光熱費をまとめて入力できます。％欄は未入力ならデフォルト（${defaultPct}%）になります。`,
+      onChange: (newFyStartYear) => {
+        bulkFyStartYear = newFyStartYear;
         renderBulkTable();
-      });
+      },
     });
 
     slot.querySelectorAll('.bulk-rent-input').forEach((input) => {

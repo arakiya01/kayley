@@ -1,8 +1,9 @@
 import {
-  getOfficerPayEntry, upsertOfficerPayEntry, resolveOfficerDeductions, prevMonth,
+  getOfficerPayEntry, upsertOfficerPayEntry, resolveOfficerDeductions, prevMonth, getMeta, getFoundingDate,
 } from '../db.js';
-import { yen, monthLabel, last12Months } from '../format.js';
+import { yen, monthLabel, monthShort, last12Months, fiscalYearStartOf, fiscalYearMonths } from '../format.js';
 import { renderMonthBar } from './monthbar.js';
+import { renderFySelector } from './fyselector.js';
 import { lineChart, donutChart } from '../charts.js';
 import { seriesColor } from '../colors.js';
 
@@ -14,82 +15,96 @@ const DEDUCTION_FIELDS = [
   { key: 'withholding_tax', label: '源泉所得税' },
 ];
 
+const BULK_FIELDS = [{ key: 'gross_pay', label: '支給額' }, ...DEDUCTION_FIELDS];
+
+let bulkMode = false;
+let bulkFyStartYear = null;
+
 export function render(container, ctx) {
   const { year, month } = ctx;
   const prev = prevMonth(year, month);
   const deductions = resolveOfficerDeductions(year, month);
+  const fyStartMonth = Number(getMeta('fiscal_year_start_month') || 4);
+  if (bulkFyStartYear == null) bulkFyStartYear = fiscalYearStartOf(year, month, fyStartMonth);
 
   container.innerHTML = `
-    <div id="month-bar-slot"></div>
-    <div class="card">
-      <h2>役員報酬</h2>
-      <div class="field-row">
-        <div class="field-label">支給額</div>
-        <input type="number" id="gross_pay" step="1">
-        <span class="field-suffix">円</span>
-      </div>
-      <div class="toolbar">
-        <span class="spacer"></span>
-        <button class="btn ghost" id="copy-prev-btn">前月の保険料等をコピー</button>
-      </div>
-      ${DEDUCTION_FIELDS.map((f) => `
+    <div id="month-bar-slot" style="${bulkMode ? 'display:none' : ''}"></div>
+    <div class="toolbar">
+      <span class="spacer"></span>
+      <button class="btn ghost" id="bulk-toggle-btn">${bulkMode ? '月次入力に戻る' : '📋 一括入力（年度）'}</button>
+    </div>
+    <div id="bulk-slot"></div>
+    <div id="single-month-slot" style="${bulkMode ? 'display:none' : ''}">
+      <div class="card">
+        <h2>役員報酬</h2>
         <div class="field-row">
-          <div class="field-label">${f.label}</div>
-          <input type="number" id="${f.key}" step="1">
+          <div class="field-label">支給額</div>
+          <input type="number" id="gross_pay" step="1">
           <span class="field-suffix">円</span>
         </div>
-      `).join('')}
-    </div>
-    <div class="card">
-      <h2>家賃・光熱費控除</h2>
-      <div class="card-note">
-        ${deductions.has_source
-          ? `${monthLabel(prev.year, prev.month)}分の家賃・光熱費台帳から自動反映しています（実績確定が翌月扱いのため）。`
-          : `${monthLabel(prev.year, prev.month)}分の家賃・光熱費データがまだ無いため、0円で計算しています。「家賃光熱費」タブで前月分を入力すると自動反映されます。`}
+        <div class="toolbar">
+          <span class="spacer"></span>
+          <button class="btn ghost" id="copy-prev-btn">前月の保険料等をコピー</button>
+        </div>
+        ${DEDUCTION_FIELDS.map((f) => `
+          <div class="field-row">
+            <div class="field-label">${f.label}</div>
+            <input type="number" id="${f.key}" step="1">
+            <span class="field-suffix">円</span>
+          </div>
+        `).join('')}
       </div>
-      <div class="field-row">
-        <div class="field-label">自動反映を使う</div>
-        <input type="checkbox" id="use_auto" style="width:auto;justify-self:start">
-      </div>
-      <div id="manual-fields" style="display:none">
+      <div class="card">
+        <h2>家賃・光熱費控除</h2>
+        <div class="card-note">
+          ${deductions.has_source
+            ? `${monthLabel(prev.year, prev.month)}分の家賃・光熱費台帳から自動反映しています（実績確定が翌月扱いのため）。`
+            : `${monthLabel(prev.year, prev.month)}分の家賃・光熱費データがまだ無いため、0円で計算しています。「家賃光熱費」タブで前月分を入力すると自動反映されます。`}
+        </div>
         <div class="field-row">
-          <div class="field-label">家賃控除（手入力）</div>
-          <input type="number" id="manual_rent_deduction" step="1">
-          <span class="field-suffix">円</span>
+          <div class="field-label">自動反映を使う</div>
+          <input type="checkbox" id="use_auto" style="width:auto;justify-self:start">
         </div>
-        <div class="field-row">
-          <div class="field-label">水道光熱費控除（手入力）</div>
-          <input type="number" id="manual_utility_deduction" step="1">
-          <span class="field-suffix">円</span>
+        <div id="manual-fields" style="display:none">
+          <div class="field-row">
+            <div class="field-label">家賃控除（手入力）</div>
+            <input type="number" id="manual_rent_deduction" step="1">
+            <span class="field-suffix">円</span>
+          </div>
+          <div class="field-row">
+            <div class="field-label">水道光熱費控除（手入力）</div>
+            <input type="number" id="manual_utility_deduction" step="1">
+            <span class="field-suffix">円</span>
+          </div>
         </div>
-      </div>
-      <div class="card-grid" style="margin-top:14px">
-        <div class="stat-tile">
-          <div class="label">家賃控除</div>
-          <div class="value num" id="rent-deduction-display">0<span class="unit">円</span></div>
-        </div>
-        <div class="stat-tile">
-          <div class="label">水道光熱費控除</div>
-          <div class="value num" id="utility-deduction-display">0<span class="unit">円</span></div>
-        </div>
-      </div>
-    </div>
-    <div class="card">
-      <h2>差引支給額</h2>
-      <div class="card-grid">
-        <div class="stat-tile">
-          <div class="label">控除合計</div>
-          <div class="value num" id="deduction-total">0<span class="unit">円</span></div>
-        </div>
-        <div class="stat-tile">
-          <div class="label">差引支給額</div>
-          <div class="value num" id="net-pay">0<span class="unit">円</span></div>
+        <div class="card-grid" style="margin-top:14px">
+          <div class="stat-tile">
+            <div class="label">家賃控除</div>
+            <div class="value num" id="rent-deduction-display">0<span class="unit">円</span></div>
+          </div>
+          <div class="stat-tile">
+            <div class="label">水道光熱費控除</div>
+            <div class="value num" id="utility-deduction-display">0<span class="unit">円</span></div>
+          </div>
         </div>
       </div>
-    </div>
-    <div class="card">
-      <h2>当月の内訳</h2>
-      <div id="pay-breakdown-chart"></div>
+      <div class="card">
+        <h2>差引支給額</h2>
+        <div class="card-grid">
+          <div class="stat-tile">
+            <div class="label">控除合計</div>
+            <div class="value num" id="deduction-total">0<span class="unit">円</span></div>
+          </div>
+          <div class="stat-tile">
+            <div class="label">差引支給額</div>
+            <div class="value num" id="net-pay">0<span class="unit">円</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>当月の内訳</h2>
+        <div id="pay-breakdown-chart"></div>
+      </div>
     </div>
     <div class="card">
       <h2>支給額・差引支給額の推移（直近12ヶ月）</h2>
@@ -100,6 +115,17 @@ export function render(container, ctx) {
   renderMonthBar(container.querySelector('#month-bar-slot'), {
     year, month, onChange: ctx.setMonth, showFinalize: true,
   });
+
+  container.querySelector('#bulk-toggle-btn').addEventListener('click', () => {
+    bulkMode = !bulkMode;
+    render(container, ctx);
+  });
+
+  if (bulkMode) {
+    renderBulkTable();
+    renderChart();
+    return;
+  }
 
   const existing = getOfficerPayEntry(year, month);
   const state = existing ? { ...existing } : {
@@ -187,6 +213,66 @@ export function render(container, ctx) {
         { label: '支給額', color: seriesColor(1), values: grossSeries },
         { label: '差引支給額', color: seriesColor(0), values: netSeries },
       ],
+    });
+  }
+
+  function renderBulkTable() {
+    const slot = container.querySelector('#bulk-slot');
+    const months = fiscalYearMonths(bulkFyStartYear, fyStartMonth);
+
+    slot.innerHTML = `
+      <div class="card">
+        <div id="fy-selector-slot"></div>
+        <div class="card-note">家賃控除・水道光熱費控除・差引支給額は、この一括入力からは計算されません。詳しく確認したいときは月次入力または月次レポートをご覧ください。</div>
+        <div class="bulk-table-wrap">
+          <table class="ledger bulk-grid">
+            <thead>
+              <tr>
+                <th>項目</th>
+                ${months.map((m) => `<th class="num">${monthShort(m.month)}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${BULK_FIELDS.map((f) => `
+                <tr>
+                  <td>${f.label}</td>
+                  ${months.map((m) => {
+                    const entry = getOfficerPayEntry(m.year, m.month);
+                    const value = entry ? entry[f.key] : 0;
+                    return `<td class="num"><input type="number" class="bulk-pay-input" data-key="${f.key}" data-year="${m.year}" data-month="${m.month}" value="${value}"></td>`;
+                  }).join('')}
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    renderFySelector(slot.querySelector('#fy-selector-slot'), {
+      fyStartYear: bulkFyStartYear,
+      fyStartMonth,
+      foundingDate: getFoundingDate(),
+      noteText: '1年度分の支給額・保険料等をまとめて入力できます。',
+      onChange: (newFyStartYear) => {
+        bulkFyStartYear = newFyStartYear;
+        renderBulkTable();
+      },
+    });
+
+    slot.querySelectorAll('.bulk-pay-input').forEach((input) => {
+      input.addEventListener('change', () => {
+        const y = Number(input.dataset.year);
+        const m = Number(input.dataset.month);
+        const existingEntry = getOfficerPayEntry(y, m) || {
+          gross_pay: 0, health_insurance: 0, nursing_care_insurance: 0, pension: 0,
+          child_support_levy: 0, withholding_tax: 0, use_auto_deduction: 1,
+          manual_rent_deduction: 0, manual_utility_deduction: 0,
+        };
+        const updated = { ...existingEntry, year: y, month: m, [input.dataset.key]: Number(input.value) || 0 };
+        upsertOfficerPayEntry(updated);
+        renderChart();
+      });
     });
   }
 }
