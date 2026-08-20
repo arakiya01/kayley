@@ -35,8 +35,7 @@ export function isConnected() {
   return !!accessToken && Date.now() < tokenExpiresAt;
 }
 
-export async function connect(clientId) {
-  await loadGis();
+function requestToken(clientId, prompt) {
   return new Promise((resolve, reject) => {
     tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: clientId,
@@ -49,39 +48,20 @@ export async function connect(clientId) {
       },
       error_callback: (err) => reject(new Error(err.message || '認証がキャンセルされました')),
     });
-    tokenClient.requestAccessToken({ prompt: isConnected() ? '' : 'consent' });
+    tokenClient.requestAccessToken({ prompt });
   });
 }
 
-// ページ読み込み時に、以前許可済みなら画面を出さずに黙って再接続を試みる。
-// 未許可・セッション切れなら何も起きず「未接続」のまま（失敗しても安全）。
-export async function trySilentReconnect(clientId) {
-  if (!clientId) return false;
+// 押した瞬間、まずGoogle側のセッションが生きていれば無言で完了を試み（本人がクリックした
+// タイミングでのみ実行するため、一瞬ウィンドウが見えても驚かれない）、ダメなら通常の同意画面に切り替える。
+export async function connect(clientId) {
+  await loadGis();
+  if (isConnected()) return;
   try {
-    await loadGis();
+    await requestToken(clientId, '');
   } catch {
-    return false;
+    await requestToken(clientId, 'consent');
   }
-  const attempt = new Promise((resolve) => {
-    try {
-      const tc = window.google.accounts.oauth2.initTokenClient({
-        client_id: clientId,
-        scope: SCOPE,
-        callback: (resp) => {
-          if (resp.error) { resolve(false); return; }
-          accessToken = resp.access_token;
-          tokenExpiresAt = Date.now() + (Number(resp.expires_in || 3600) - 60) * 1000;
-          resolve(true);
-        },
-        error_callback: () => resolve(false),
-      });
-      tc.requestAccessToken({ prompt: '' });
-    } catch {
-      resolve(false);
-    }
-  });
-  const timeout = new Promise((resolve) => setTimeout(() => resolve(false), 4000));
-  return Promise.race([attempt, timeout]);
 }
 
 export function disconnect() {

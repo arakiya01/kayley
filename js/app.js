@@ -1,6 +1,5 @@
 import { openDatabase, getMeta, getFoundingDate } from './db.js';
 import { todayYearMonth } from './format.js';
-import * as gdrive from './gdrive.js';
 import * as dashboard from './views/dashboard.js';
 import * as ar from './views/ar.js';
 import * as rent from './views/rent.js';
@@ -98,13 +97,6 @@ async function main() {
   if (!location.hash) location.hash = `#/${state.tab}`;
   renderShell();
   renderView();
-
-  const clientId = getMeta('gdrive_client_id');
-  if (clientId) {
-    gdrive.trySilentReconnect(clientId).then((ok) => {
-      if (ok) renderView();
-    });
-  }
 }
 
 main();
