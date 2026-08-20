@@ -4,6 +4,7 @@ import {
 import { yen, monthLabel, monthShort, last12Months, fiscalYearStartOf, fiscalYearMonths } from '../format.js';
 import { renderMonthBar } from './monthbar.js';
 import { renderFySelector } from './fyselector.js';
+import { enableGridPaste } from './gridpaste.js';
 import { lineChart, donutChart } from '../charts.js';
 import { seriesColor } from '../colors.js';
 
@@ -259,6 +260,8 @@ export function render(container, ctx) {
         renderBulkTable();
       },
     });
+
+    enableGridPaste(slot.querySelector('table.bulk-grid'), '.bulk-pay-input');
 
     slot.querySelectorAll('.bulk-pay-input').forEach((input) => {
       input.addEventListener('change', () => {

@@ -6,6 +6,7 @@ import {
 } from '../format.js';
 import { renderMonthBar } from './monthbar.js';
 import { renderFySelector } from './fyselector.js';
+import { enableGridPaste } from './gridpaste.js';
 import { lineChart, emptyChart } from '../charts.js';
 import { seriesColor, foldSeriesArrays } from '../colors.js';
 
@@ -238,6 +239,8 @@ export function render(container, ctx) {
         renderBulkTable();
       },
     });
+
+    enableGridPaste(slot.querySelector('table.bulk-grid'), '.bulk-sales, .bulk-payment');
 
     slot.querySelectorAll('.bulk-sales, .bulk-payment').forEach((input) => {
       input.addEventListener('change', () => {
