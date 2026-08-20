@@ -355,6 +355,32 @@ table.ledger td.num, table.ledger th.num {
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- bulk (一括入力) grid ---------- */
+
+.bulk-table-wrap {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+table.bulk-grid {
+  white-space: nowrap;
+}
+table.bulk-grid th, table.bulk-grid td {
+  padding: 4px 5px;
+}
+table.bulk-grid th:first-child, table.bulk-grid td:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--card);
+  z-index: 1;
+  white-space: normal;
+  min-width: 120px;
+}
+table.bulk-grid input[type="number"] {
+  width: 76px;
+  padding: 5px 6px;
+  font-size: 12px;
+}
+
 /* ---------- forms ---------- */
 
 .field-row {

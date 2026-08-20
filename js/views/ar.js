@@ -1,10 +1,15 @@
 import {
-  listClients, upsertClient, getArEntry, upsertArEntry, computeArLedger,
+  listClients, upsertClient, getArEntry, upsertArEntry, computeArLedger, getMeta,
 } from '../db.js';
-import { yen, monthLabel, last12Months, escapeHtml } from '../format.js';
+import {
+  yen, monthLabel, monthShort, last12Months, escapeHtml, fiscalYearStartOf, fiscalYearMonths,
+} from '../format.js';
 import { renderMonthBar } from './monthbar.js';
 import { lineChart, emptyChart } from '../charts.js';
 import { seriesColor, foldSeriesArrays } from '../colors.js';
+
+let bulkMode = false;
+let bulkFyStartYear = null;
 
 function unpaidStreak(ledger, year, month) {
   const idx = ledger.findIndex((r) => r.year === year && r.month === month);
@@ -27,15 +32,18 @@ function agingBadge(streak) {
 export function render(container, ctx) {
   const { year, month } = ctx;
   const clients = listClients();
+  const fyStartMonth = Number(getMeta('fiscal_year_start_month') || 4);
+  if (bulkFyStartYear == null) bulkFyStartYear = fiscalYearStartOf(year, month, fyStartMonth);
 
   container.innerHTML = `
-    <div id="month-bar-slot"></div>
+    <div id="month-bar-slot" class="${bulkMode ? 'no-print' : ''}" style="${bulkMode ? 'display:none' : ''}"></div>
     <div class="card">
       <h2>売掛金台帳</h2>
       <div class="card-note">得意先ごとの当月売上・入金を記録します。残高は自動で繰り越し計算されます。</div>
       <div class="toolbar">
         <span class="spacer"></span>
         <button class="btn ghost" id="add-client-btn">＋ 得意先を追加</button>
+        <button class="btn ghost" id="bulk-toggle-btn">${bulkMode ? '月次入力に戻る' : '📋 一括入力（年度）'}</button>
       </div>
       <div id="ar-table-slot"></div>
     </div>
@@ -48,6 +56,11 @@ export function render(container, ctx) {
 
   renderMonthBar(container.querySelector('#month-bar-slot'), {
     year, month, onChange: ctx.setMonth, showFinalize: true,
+  });
+
+  container.querySelector('#bulk-toggle-btn').addEventListener('click', () => {
+    bulkMode = !bulkMode;
+    render(container, ctx);
   });
 
   renderTable();
@@ -96,6 +109,7 @@ export function render(container, ctx) {
   });
 
   function renderTable() {
+    if (bulkMode) { renderBulkTable(); return; }
     const slot = container.querySelector('#ar-table-slot');
     const activeClients = listClients();
     if (activeClients.length === 0) {
@@ -166,6 +180,80 @@ export function render(container, ctx) {
         const payment = Number(tr.querySelector('.payment-input').value) || 0;
         upsertArEntry({ client_id: clientId, year, month, sales, payment });
         renderTable();
+        renderCharts();
+      });
+    });
+  }
+
+  function renderBulkTable() {
+    const slot = container.querySelector('#ar-table-slot');
+    const activeClients = listClients();
+    const months = fiscalYearMonths(bulkFyStartYear, fyStartMonth);
+
+    if (activeClients.length === 0) {
+      slot.innerHTML = '';
+      emptyChart(slot, 'まだ得意先が登録されていません。「＋ 得意先を追加」から始めましょう。');
+      return;
+    }
+
+    slot.innerHTML = `
+      <div class="toolbar" style="margin-bottom:10px">
+        <div class="stepper">
+          <button class="btn ghost step" data-dir="-1">‹</button>
+          <div class="current-month">${monthLabel(months[0].year, months[0].month)} 〜 ${monthLabel(months[11].year, months[11].month)}</div>
+          <button class="btn ghost step" data-dir="1">›</button>
+        </div>
+        <span class="card-note" style="margin:0">1年度分の売上・入金をまとめて入力できます。</span>
+      </div>
+      <div class="bulk-table-wrap">
+        <table class="ledger bulk-grid">
+          <thead>
+            <tr>
+              <th rowspan="2">得意先</th>
+              ${months.map((m) => `<th colspan="2" style="text-align:center">${monthShort(m.month)}</th>`).join('')}
+            </tr>
+            <tr>
+              ${months.map(() => `<th class="num">売上</th><th class="num">入金</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${activeClients.map((c) => `
+              <tr data-client-id="${c.id}">
+                <td>${escapeHtml(c.name)}</td>
+                ${months.map((m) => {
+                  const entry = getArEntry(c.id, m.year, m.month) || { sales: 0, payment: 0 };
+                  return `
+                    <td class="num"><input type="number" class="bulk-sales" data-client="${c.id}" data-year="${m.year}" data-month="${m.month}" value="${entry.sales || 0}"></td>
+                    <td class="num"><input type="number" class="bulk-payment" data-client="${c.id}" data-year="${m.year}" data-month="${m.month}" value="${entry.payment || 0}"></td>
+                  `;
+                }).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    slot.querySelectorAll('.step').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        bulkFyStartYear += Number(btn.dataset.dir);
+        renderBulkTable();
+      });
+    });
+
+    slot.querySelectorAll('.bulk-sales, .bulk-payment').forEach((input) => {
+      input.addEventListener('change', () => {
+        const clientId = Number(input.dataset.client);
+        const y = Number(input.dataset.year);
+        const m = Number(input.dataset.month);
+        const row = input.closest('tr');
+        const salesInput = row.querySelector(`.bulk-sales[data-year="${y}"][data-month="${m}"]`);
+        const paymentInput = row.querySelector(`.bulk-payment[data-year="${y}"][data-month="${m}"]`);
+        upsertArEntry({
+          client_id: clientId, year: y, month: m,
+          sales: Number(salesInput.value) || 0,
+          payment: Number(paymentInput.value) || 0,
+        });
         renderCharts();
       });
     });

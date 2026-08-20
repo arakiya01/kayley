@@ -1,5 +1,7 @@
 import { getRentUtilityEntry, upsertRentUtilityEntry, computeUtilityPersonalTotal, getMeta } from '../db.js';
-import { yen, monthLabel, last12Months } from '../format.js';
+import {
+  yen, monthLabel, monthShort, last12Months, fiscalYearStartOf, fiscalYearMonths,
+} from '../format.js';
 import { renderMonthBar } from './monthbar.js';
 import { lineChart } from '../charts.js';
 import { seriesColor } from '../colors.js';
@@ -10,53 +12,76 @@ const FIELDS = [
   { key: 'electricity', label: '電気', totalKey: 'electricity_total', pctKey: 'electricity_personal_pct' },
 ];
 
+const BULK_ROWS = [
+  { key: 'rent_total', label: '家賃（全体）' },
+  { key: 'rent_personal_fixed', label: '家賃（個人固定）' },
+  { key: 'water_total', label: '水道（全体）' },
+  { key: 'water_personal_pct', label: '水道（％）' },
+  { key: 'gas_total', label: 'ガス（全体）' },
+  { key: 'gas_personal_pct', label: 'ガス（％）' },
+  { key: 'electricity_total', label: '電気（全体）' },
+  { key: 'electricity_personal_pct', label: '電気（％）' },
+];
+
+let bulkMode = false;
+let bulkFyStartYear = null;
+
 export function render(container, ctx) {
   const { year, month } = ctx;
   const defaultPct = Number(getMeta('default_utility_personal_pct') || 40);
+  const fyStartMonth = Number(getMeta('fiscal_year_start_month') || 4);
+  if (bulkFyStartYear == null) bulkFyStartYear = fiscalYearStartOf(year, month, fyStartMonth);
 
   container.innerHTML = `
-    <div id="month-bar-slot"></div>
-    <div class="card">
-      <h2>家賃</h2>
-      <div class="card-note">全体の家賃実額と、個人負担分（固定額）を入力します。</div>
-      <div class="field-row">
-        <div class="field-label">家賃（全体・実額）</div>
-        <input type="number" id="rent_total" step="1">
-        <span class="field-suffix">円</span>
-      </div>
-      <div class="field-row">
-        <div class="field-label">家賃（個人負担・固定）<span class="hint">按分契約上の固定額</span></div>
-        <input type="number" id="rent_personal_fixed" step="1">
-        <span class="field-suffix">円</span>
-      </div>
+    <div id="month-bar-slot" style="${bulkMode ? 'display:none' : ''}"></div>
+    <div class="toolbar">
+      <span class="spacer"></span>
+      <button class="btn ghost" id="bulk-toggle-btn">${bulkMode ? '月次入力に戻る' : '📋 一括入力（年度）'}</button>
     </div>
-    <div class="card">
-      <h2>光熱費</h2>
-      <div class="card-note">全体の請求額と、個人負担割合（％）から個人負担額を自動計算します。</div>
-      ${FIELDS.map((f) => `
+    <div id="single-month-slot" style="${bulkMode ? 'display:none' : ''}">
+      <div class="card">
+        <h2>家賃</h2>
+        <div class="card-note">全体の家賃実額と、個人負担分（固定額）を入力します。</div>
         <div class="field-row">
-          <div class="field-label">${f.label}（全体）</div>
-          <input type="number" id="${f.totalKey}" step="1">
+          <div class="field-label">家賃（全体・実額）</div>
+          <input type="number" id="rent_total" step="1">
           <span class="field-suffix">円</span>
-          <input type="number" id="${f.pctKey}" step="1" style="max-width:90px">
-          <span class="field-suffix">％負担 → <span class="num" id="${f.key}-personal">0</span>円</span>
         </div>
-      `).join('')}
-    </div>
-    <div class="card">
-      <h2>当月の個人負担まとめ</h2>
-      <div class="card-note">この金額は、翌月の役員報酬明細で自動的に控除項目として反映されます（実績確定が翌月になるため）。</div>
-      <div class="card-grid">
-        <div class="stat-tile">
-          <div class="label">光熱費 個人負担計</div>
-          <div class="value num" id="utility-personal-total">0<span class="unit">円</span></div>
+        <div class="field-row">
+          <div class="field-label">家賃（個人負担・固定）<span class="hint">按分契約上の固定額</span></div>
+          <input type="number" id="rent_personal_fixed" step="1">
+          <span class="field-suffix">円</span>
         </div>
-        <div class="stat-tile">
-          <div class="label">家賃・光熱費 個人負担合計</div>
-          <div class="value num" id="grand-personal-total">0<span class="unit">円</span></div>
+      </div>
+      <div class="card">
+        <h2>光熱費</h2>
+        <div class="card-note">全体の請求額と、個人負担割合（％）から個人負担額を自動計算します。</div>
+        ${FIELDS.map((f) => `
+          <div class="field-row">
+            <div class="field-label">${f.label}（全体）</div>
+            <input type="number" id="${f.totalKey}" step="1">
+            <span class="field-suffix">円</span>
+            <input type="number" id="${f.pctKey}" step="1" style="max-width:90px">
+            <span class="field-suffix">％負担 → <span class="num" id="${f.key}-personal">0</span>円</span>
+          </div>
+        `).join('')}
+      </div>
+      <div class="card">
+        <h2>当月の個人負担まとめ</h2>
+        <div class="card-note">この金額は、翌月の役員報酬明細で自動的に控除項目として反映されます（実績確定が翌月になるため）。</div>
+        <div class="card-grid">
+          <div class="stat-tile">
+            <div class="label">光熱費 個人負担計</div>
+            <div class="value num" id="utility-personal-total">0<span class="unit">円</span></div>
+          </div>
+          <div class="stat-tile">
+            <div class="label">家賃・光熱費 個人負担合計</div>
+            <div class="value num" id="grand-personal-total">0<span class="unit">円</span></div>
+          </div>
         </div>
       </div>
     </div>
+    <div id="bulk-slot"></div>
     <div class="card">
       <h2>個人負担額の推移（直近12ヶ月）</h2>
       <div id="rent-trend-chart"></div>
@@ -71,6 +96,17 @@ export function render(container, ctx) {
   renderMonthBar(container.querySelector('#month-bar-slot'), {
     year, month, onChange: ctx.setMonth, showFinalize: true,
   });
+
+  container.querySelector('#bulk-toggle-btn').addEventListener('click', () => {
+    bulkMode = !bulkMode;
+    render(container, ctx);
+  });
+
+  if (bulkMode) {
+    renderBulkTable();
+    renderChart();
+    return;
+  }
 
   const existing = getRentUtilityEntry(year, month);
   const state = existing ? { ...existing } : {
@@ -146,6 +182,70 @@ export function render(container, ctx) {
         { label: 'ガス（個人負担）', color: seriesColor(2), values: gasSeries },
         { label: '電気（個人負担）', color: seriesColor(0), values: elecSeries },
       ],
+    });
+  }
+
+  function renderBulkTable() {
+    const slot = container.querySelector('#bulk-slot');
+    const months = fiscalYearMonths(bulkFyStartYear, fyStartMonth);
+
+    slot.innerHTML = `
+      <div class="card">
+        <div class="toolbar" style="margin-bottom:10px">
+          <div class="stepper">
+            <button class="btn ghost step" data-dir="-1">‹</button>
+            <div class="current-month">${monthLabel(months[0].year, months[0].month)} 〜 ${monthLabel(months[11].year, months[11].month)}</div>
+            <button class="btn ghost step" data-dir="1">›</button>
+          </div>
+          <span class="card-note" style="margin:0">1年度分の家賃・光熱費をまとめて入力できます。％欄は未入力ならデフォルト（${defaultPct}%）になります。</span>
+        </div>
+        <div class="bulk-table-wrap">
+          <table class="ledger bulk-grid">
+            <thead>
+              <tr>
+                <th>項目</th>
+                ${months.map((m) => `<th class="num">${monthShort(m.month)}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${BULK_ROWS.map((row) => `
+                <tr>
+                  <td>${row.label}</td>
+                  ${months.map((m) => {
+                    const entry = getRentUtilityEntry(m.year, m.month);
+                    const isPct = row.key.endsWith('_personal_pct');
+                    const value = entry ? entry[row.key] : (isPct ? defaultPct : 0);
+                    return `<td class="num"><input type="number" class="bulk-rent-input" data-key="${row.key}" data-year="${m.year}" data-month="${m.month}" value="${value}"></td>`;
+                  }).join('')}
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    slot.querySelectorAll('.step').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        bulkFyStartYear += Number(btn.dataset.dir);
+        renderBulkTable();
+      });
+    });
+
+    slot.querySelectorAll('.bulk-rent-input').forEach((input) => {
+      input.addEventListener('change', () => {
+        const y = Number(input.dataset.year);
+        const m = Number(input.dataset.month);
+        const existingEntry = getRentUtilityEntry(y, m) || {
+          rent_total: 0, rent_personal_fixed: 0,
+          water_total: 0, water_personal_pct: defaultPct,
+          gas_total: 0, gas_personal_pct: defaultPct,
+          electricity_total: 0, electricity_personal_pct: defaultPct,
+        };
+        const updated = { ...existingEntry, year: y, month: m, [input.dataset.key]: Number(input.value) || 0 };
+        upsertRentUtilityEntry(updated);
+        renderChart();
+      });
     });
   }
 }

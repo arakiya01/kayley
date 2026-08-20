@@ -35,6 +35,16 @@ export function last12Months(year, month) {
   return out;
 }
 
+// 会計年度の開始月を基準に、指定した年月を含む年度の開始年を求める
+export function fiscalYearStartOf(year, month, fyStartMonth) {
+  return month >= fyStartMonth ? year : year - 1;
+}
+
+// 会計年度の開始年から、その年度に含まれる12ヶ月分を返す
+export function fiscalYearMonths(fyStartYear, fyStartMonth) {
+  return Array.from({ length: 12 }, (_, i) => addMonths(fyStartYear, fyStartMonth, i));
+}
+
 export function escapeHtml(str) {
   if (str == null) return '';
   return String(str)
