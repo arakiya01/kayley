@@ -19,6 +19,7 @@
   --ink:          #22344A;   /* ledger-ink navy: headings, primary text */
   --ink-soft:     #4C5C70;
   --ink-muted:    #7C8794;
+  --btn-primary-text: #FFFFFF;
 
   /* accent — used ONLY for actions & the finalize stamp */
   --hanko:        #B23A2E;
@@ -58,13 +59,22 @@ html, body {
   -webkit-font-smoothing: antialiased;
 }
 
-body {
+body.pattern-grid {
   background-image:
     linear-gradient(var(--hairline) 1px, transparent 1px),
     linear-gradient(90deg, var(--hairline) 1px, transparent 1px);
   background-size: 24px 24px;
   background-attachment: fixed;
   background-position: -1px -1px;
+}
+body.pattern-dots {
+  background-image: radial-gradient(var(--hairline) 1.4px, transparent 1.4px);
+  background-size: 20px 20px;
+  background-attachment: fixed;
+  background-position: -1px -1px;
+}
+body.pattern-none {
+  background-image: none;
 }
 
 h1, h2, h3, .display {
@@ -407,7 +417,7 @@ input.computed {
 .btn.primary {
   background: var(--ink);
   border-color: var(--ink);
-  color: #fff;
+  color: var(--btn-primary-text, #fff);
 }
 .btn.primary:hover { background: var(--ink-soft); }
 .btn.hanko-btn {

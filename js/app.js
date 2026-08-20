@@ -1,5 +1,6 @@
 import { openDatabase, getMeta, getFoundingDate } from './db.js';
 import { todayYearMonth } from './format.js';
+import { applyTheme } from './theme.js';
 import * as dashboard from './views/dashboard.js';
 import * as ar from './views/ar.js';
 import * as rent from './views/rent.js';
@@ -94,6 +95,7 @@ window.addEventListener('hashchange', renderView);
 
 async function main() {
   await openDatabase();
+  applyTheme();
   if (!location.hash) location.hash = `#/${state.tab}`;
   renderShell();
   renderView();

@@ -2,6 +2,7 @@ import { getMeta, setMeta, listClients, upsertClient, archiveClient, exportBytes
 import { Storage } from '../storage.js';
 import { escapeHtml } from '../format.js';
 import * as gdrive from '../gdrive.js';
+import { applyTheme, fileToResizedDataUrl } from '../theme.js';
 
 let showClientIdOverride = false;
 
@@ -16,6 +17,12 @@ export function render(container) {
   const gdriveClientId = getMeta('gdrive_client_id') || '';
   const gdriveConnected = gdrive.isConnected();
   const showClientIdField = showClientIdOverride || !gdriveClientId;
+
+  const bgColor = getMeta('theme_bg_color') || '#FBF8F1';
+  const cardColor = getMeta('theme_card_color') || '#F7F1E3';
+  const pattern = getMeta('theme_pattern') || 'grid';
+  const bgImage = getMeta('theme_bg_image') || '';
+  const bgImageTarget = getMeta('theme_bg_image_target') || 'background';
 
   container.innerHTML = `
     <div class="card">
@@ -100,6 +107,54 @@ export function render(container) {
       </div>
       <div id="gdrive-status-note" class="card-note"></div>
     </div>
+
+    <div class="card">
+      <h2>外観</h2>
+      <div class="card-note">背景・カードの色やパターンを好みに変更できます。</div>
+      <div class="field-row">
+        <div class="field-label">背景色</div>
+        <input type="color" id="theme_bg_color" value="${bgColor}" style="max-width:70px;padding:2px">
+      </div>
+      <div class="field-row">
+        <div class="field-label">カードの色</div>
+        <input type="color" id="theme_card_color" value="${cardColor}" style="max-width:70px;padding:2px">
+      </div>
+      <div class="field-row">
+        <div class="field-label">背景パターン</div>
+        <select id="theme_pattern">
+          <option value="grid" ${pattern === 'grid' ? 'selected' : ''}>方眼（デフォルト）</option>
+          <option value="dots" ${pattern === 'dots' ? 'selected' : ''}>ドット</option>
+          <option value="none" ${pattern === 'none' ? 'selected' : ''}>なし（単色）</option>
+        </select>
+      </div>
+      <div class="toolbar">
+        <span class="spacer"></span>
+        <button class="btn ghost" id="theme-reset-btn">色をリセット</button>
+      </div>
+
+      <div class="card-note" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--hairline)">
+        画像をアップロードして、背景やカードに使うこともできます。
+      </div>
+      <div class="toolbar">
+        <label class="btn ghost" style="cursor:pointer">
+          ＋ 画像をアップロード
+          <input type="file" id="theme-bg-image-input" accept="image/*" style="display:none">
+        </label>
+        ${bgImage ? `<button class="btn ghost" id="theme-remove-image-btn">画像を削除</button>` : ''}
+        <span id="theme-image-status" class="card-note" style="margin:0"></span>
+      </div>
+      ${bgImage ? `
+        <div class="field-row">
+          <div class="field-label">画像の使い道</div>
+          <select id="theme_bg_image_target">
+            <option value="background" ${bgImageTarget === 'background' ? 'selected' : ''}>背景に使う</option>
+            <option value="cards" ${bgImageTarget === 'cards' ? 'selected' : ''}>カードに使う</option>
+            <option value="both" ${bgImageTarget === 'both' ? 'selected' : ''}>両方に使う</option>
+          </select>
+        </div>
+        <img src="${bgImage}" alt="アップロードした背景画像" style="max-width:200px;border-radius:3px;border:1px solid var(--grid-line);margin-top:10px">
+      ` : ''}
+    </div>
   `;
 
   container.querySelector('#company_name').addEventListener('change', (e) => setMeta('company_name', e.target.value));
@@ -165,5 +220,57 @@ export function render(container) {
   container.querySelector('#gdrive-disconnect-btn').addEventListener('click', () => {
     gdrive.disconnect();
     render(container);
+  });
+
+  container.querySelector('#theme_bg_color').addEventListener('input', (e) => {
+    setMeta('theme_bg_color', e.target.value);
+    applyTheme();
+  });
+  container.querySelector('#theme_card_color').addEventListener('input', (e) => {
+    setMeta('theme_card_color', e.target.value);
+    applyTheme();
+  });
+  container.querySelector('#theme_pattern').addEventListener('change', (e) => {
+    setMeta('theme_pattern', e.target.value);
+    applyTheme();
+  });
+  container.querySelector('#theme-reset-btn').addEventListener('click', () => {
+    setMeta('theme_bg_color', '#FBF8F1');
+    setMeta('theme_card_color', '#F7F1E3');
+    setMeta('theme_pattern', 'grid');
+    applyTheme();
+    render(container);
+  });
+
+  const imageTargetSelect = container.querySelector('#theme_bg_image_target');
+  if (imageTargetSelect) {
+    imageTargetSelect.addEventListener('change', (e) => {
+      setMeta('theme_bg_image_target', e.target.value);
+      applyTheme();
+    });
+  }
+
+  const removeImageBtn = container.querySelector('#theme-remove-image-btn');
+  if (removeImageBtn) {
+    removeImageBtn.addEventListener('click', () => {
+      setMeta('theme_bg_image', '');
+      applyTheme();
+      render(container);
+    });
+  }
+
+  const imageStatus = container.querySelector('#theme-image-status');
+  container.querySelector('#theme-bg-image-input').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    imageStatus.textContent = '画像を処理しています…';
+    try {
+      const dataUrl = await fileToResizedDataUrl(file);
+      setMeta('theme_bg_image', dataUrl);
+      applyTheme();
+      render(container);
+    } catch (err) {
+      imageStatus.textContent = err.message;
+    }
   });
 }

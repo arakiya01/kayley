@@ -90,6 +90,11 @@ const DEFAULT_META = {
   founding_month: '',
   gdrive_client_id: '',
   gdrive_folder_id: '',
+  theme_bg_color: '#FBF8F1',
+  theme_card_color: '#F7F1E3',
+  theme_pattern: 'grid',
+  theme_bg_image: '',
+  theme_bg_image_target: 'background',
 };
 
 let SQL = null;
