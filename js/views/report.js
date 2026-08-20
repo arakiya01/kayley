@@ -22,6 +22,7 @@ export function render(container, ctx) {
   const status = getMonthStatus(year, month);
   const finalized = !!(status && status.finalized);
   const prev = prevMonth(year, month);
+  const gdriveConfigured = !!getMeta('gdrive_client_id');
 
   const arRows = clients.map((c) => {
     const ledger = computeArLedger(c);
@@ -125,14 +126,14 @@ export function render(container, ctx) {
     <div class="card">
       <h2>証憑（領収書・請求書）</h2>
       <div class="card-note no-print">
-        ${gdrive.isConnected()
+        ${gdriveConfigured
           ? 'あなたのGoogleドライブの「月次伝票 - 証憑」フォルダに保存されます。'
-          : 'Google Driveが未接続です。「設定」タブから接続すると、ここでファイルをアップロードできます。'}
+          : 'Google Driveが未設定です。「設定」タブから連携すると、ここでファイルをアップロードできます。'}
       </div>
       <div class="toolbar no-print">
-        <label class="btn ghost" style="cursor:${gdrive.isConnected() ? 'pointer' : 'not-allowed'};${gdrive.isConnected() ? '' : 'opacity:0.45'}">
+        <label class="btn ghost" style="cursor:${gdriveConfigured ? 'pointer' : 'not-allowed'};${gdriveConfigured ? '' : 'opacity:0.45'}">
           ＋ ファイルを追加
-          <input type="file" id="attachment-file" multiple style="display:none" ${gdrive.isConnected() ? '' : 'disabled'}>
+          <input type="file" id="attachment-file" multiple style="display:none" ${gdriveConfigured ? '' : 'disabled'}>
         </label>
         <span id="attachment-upload-status" class="card-note" style="margin:0"></span>
       </div>

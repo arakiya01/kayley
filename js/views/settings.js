@@ -3,6 +3,8 @@ import { Storage } from '../storage.js';
 import { escapeHtml } from '../format.js';
 import * as gdrive from '../gdrive.js';
 
+let showClientIdOverride = false;
+
 export function render(container) {
   const companyName = getMeta('company_name') || '';
   const fyStart = getMeta('fiscal_year_start_month') || '4';
@@ -13,6 +15,7 @@ export function render(container) {
   const clients = listClients({ includeArchived: true });
   const gdriveClientId = getMeta('gdrive_client_id') || '';
   const gdriveConnected = gdrive.isConnected();
+  const showClientIdField = showClientIdOverride || !gdriveClientId;
 
   container.innerHTML = `
     <div class="card">
@@ -77,12 +80,20 @@ export function render(container) {
         領収書・請求書などのファイルを、あなた自身のGoogleドライブ内の専用フォルダ（「月次伝票 - 証憑」）に保存できるようにします。
         このアプリにサーバーは無く、ブラウザから直接Googleへ送信します。使用する権限は <strong>drive.file</strong>（このアプリが作成したファイルにしか触れない、最も限定的な権限）のみで、ドライブ内の他のファイルは一切見えません。
       </div>
-      <div class="field-row">
-        <div class="field-label">OAuthクライアントID<span class="hint">Google Cloud ConsoleでOAuthクライアント（種類: ウェブアプリケーション）を作成し、承認済みのJavaScript生成元にこのアプリのURLを登録してから、クライアントIDを貼り付けてください</span></div>
-        <input type="text" id="gdrive_client_id" placeholder="xxxxxxxxxx.apps.googleusercontent.com" value="${escapeHtml(gdriveClientId)}">
-      </div>
+      ${showClientIdField ? `
+        <div class="field-row">
+          <div class="field-label">OAuthクライアントID<span class="hint">Google Cloud ConsoleでOAuthクライアント（種類: ウェブアプリケーション）を作成し、承認済みのJavaScript生成元にこのアプリのURLを登録してから、クライアントIDを貼り付けてください</span></div>
+          <input type="text" id="gdrive_client_id" placeholder="xxxxxxxxxx.apps.googleusercontent.com" value="${escapeHtml(gdriveClientId)}">
+        </div>
+      ` : `
+        <div class="field-row">
+          <div class="field-label">OAuthクライアントID</div>
+          <span class="card-note" style="margin:0">設定済み</span>
+          <button class="btn ghost" id="gdrive-edit-client-id-btn" style="justify-self:start">変更する</button>
+        </div>
+      `}
       <div class="toolbar">
-        <span class="badge ${gdriveConnected ? 'good' : 'warning'}">${gdriveConnected ? '接続済み（このブラウザのタブを閉じるまで有効）' : '未接続'}</span>
+        <span class="badge ${gdriveConnected ? 'good' : 'warning'}">${gdriveConnected ? '接続済み' : (gdriveClientId ? '未接続（アップロード時に自動で繋ぎ直します）' : '未接続')}</span>
         <span class="spacer"></span>
         <button class="btn primary" id="gdrive-connect-btn">接続する</button>
         <button class="btn ghost" id="gdrive-disconnect-btn" ${gdriveConnected ? '' : 'disabled'}>切断する</button>
@@ -118,13 +129,24 @@ export function render(container) {
     location.reload();
   });
 
-  container.querySelector('#gdrive_client_id').addEventListener('change', (e) => {
-    setMeta('gdrive_client_id', e.target.value.trim());
-  });
+  const clientIdInput = container.querySelector('#gdrive_client_id');
+  if (clientIdInput) {
+    clientIdInput.addEventListener('change', (e) => {
+      setMeta('gdrive_client_id', e.target.value.trim());
+    });
+  }
+
+  const editClientIdBtn = container.querySelector('#gdrive-edit-client-id-btn');
+  if (editClientIdBtn) {
+    editClientIdBtn.addEventListener('click', () => {
+      showClientIdOverride = true;
+      render(container);
+    });
+  }
 
   const statusNote = container.querySelector('#gdrive-status-note');
   container.querySelector('#gdrive-connect-btn').addEventListener('click', async () => {
-    const clientId = container.querySelector('#gdrive_client_id').value.trim();
+    const clientId = (clientIdInput ? clientIdInput.value.trim() : getMeta('gdrive_client_id') || '');
     if (!clientId) {
       statusNote.textContent = 'まずOAuthクライアントIDを入力してください。';
       return;
@@ -133,6 +155,7 @@ export function render(container) {
     statusNote.textContent = 'Googleの認証画面を確認してください…';
     try {
       await gdrive.connect(clientId);
+      showClientIdOverride = false;
       render(container);
     } catch (err) {
       statusNote.textContent = `接続に失敗しました: ${err.message}`;

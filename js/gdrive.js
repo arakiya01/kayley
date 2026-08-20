@@ -93,6 +93,20 @@ export async function connect(clientId) {
   }
 }
 
+// アップロード・削除の直前に呼ぶ。トークンが切れていても、Google側のログインが
+// まだ生きていれば無言で繋ぎ直す（本人の操作（ファイル選択など）に紐づく形でのみ実行される）。
+export async function ensureConnected() {
+  if (isConnected()) return;
+  const clientId = getMeta('gdrive_client_id');
+  if (!clientId) throw new Error('Google Driveが未設定です。「設定」タブでクライアントIDを登録してください。');
+  await loadGis();
+  try {
+    await requestToken(clientId, '');
+  } catch {
+    throw new Error('Google Driveへの接続が切れています。「設定」タブで「接続する」を押してください。');
+  }
+}
+
 export function disconnect() {
   if (accessToken && window.google && window.google.accounts) {
     window.google.accounts.oauth2.revoke(accessToken, () => {});
@@ -150,6 +164,7 @@ async function ensureFolder() {
 }
 
 export async function uploadFile(file, { year, month }) {
+  await ensureConnected();
   const folderId = await ensureFolder();
   const name = `${year}-${String(month).padStart(2, '0')}_${file.name}`;
   const metadata = { name, parents: [folderId] };
@@ -173,6 +188,7 @@ export async function uploadFile(file, { year, month }) {
 }
 
 export async function deleteFile(fileId) {
+  await ensureConnected();
   const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
     method: 'DELETE',
     headers: authHeader(),
