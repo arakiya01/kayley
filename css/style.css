@@ -182,6 +182,8 @@ nav.tabs a.active {
   border-radius: 2px;
 }
 .month-bar button.step:hover { background: var(--card); color: var(--ink); }
+.month-bar button.step:disabled { opacity: 0.3; cursor: not-allowed; }
+.month-bar button.step:disabled:hover { background: transparent; }
 
 .month-bar .current-month {
   font-family: var(--font-display);
@@ -189,6 +191,64 @@ nav.tabs a.active {
   font-size: 17px;
   min-width: 8em;
   text-align: center;
+  padding: 4px 8px;
+  border-radius: 2px;
+  color: var(--ink);
+}
+.month-bar .current-month:hover { background: var(--card); }
+
+.month-popover {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 30;
+  background: var(--card-raised);
+  border: 1px solid var(--grid-line);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 24px rgba(34,52,74,0.14);
+  padding: 14px;
+  width: 260px;
+}
+.month-popover.open { display: block; }
+
+.popover-year-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.popover-year-row .btn { padding: 4px 10px; }
+.popover-year-label {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.popover-month-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.popover-month-btn {
+  border: 1px solid var(--grid-line);
+  background: var(--card);
+  color: var(--ink);
+  border-radius: 2px;
+  padding: 8px 4px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: var(--font-mono);
+}
+.popover-month-btn:hover { border-color: var(--ink-soft); }
+.popover-month-btn.selected {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+.popover-month-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 .finalize-badge {

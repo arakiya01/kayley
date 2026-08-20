@@ -1,7 +1,7 @@
 import { getRentUtilityEntry, upsertRentUtilityEntry, computeUtilityPersonalTotal, getMeta } from '../db.js';
 import { yen, monthLabel, last12Months } from '../format.js';
 import { renderMonthBar } from './monthbar.js';
-import { lineChart, barChart } from '../charts.js';
+import { barChart, lineChart } from '../charts.js';
 import { seriesColor } from '../colors.js';
 
 const FIELDS = [
@@ -60,6 +60,11 @@ export function render(container, ctx) {
     <div class="card">
       <h2>個人負担額の推移（直近12ヶ月）</h2>
       <div id="rent-trend-chart"></div>
+    </div>
+    <div class="card">
+      <h2>光熱費の推移（直近12ヶ月）</h2>
+      <div class="card-note">水道・ガス・電気の個人負担額（円）</div>
+      <div id="utility-trend-chart"></div>
     </div>
   `;
 
@@ -124,6 +129,22 @@ export function render(container, ctx) {
       series: [
         { label: '家賃個人負担', color: seriesColor(0), values: rentSeries },
         { label: '光熱費個人負担', color: seriesColor(1), values: utilitySeries },
+      ],
+    });
+
+    const waterSeries = [], gasSeries = [], elecSeries = [];
+    months.forEach((m) => {
+      const e = getRentUtilityEntry(m.year, m.month);
+      waterSeries.push(e ? Math.round(e.water_total * e.water_personal_pct / 100) : 0);
+      gasSeries.push(e ? Math.round(e.gas_total * e.gas_personal_pct / 100) : 0);
+      elecSeries.push(e ? Math.round(e.electricity_total * e.electricity_personal_pct / 100) : 0);
+    });
+    lineChart(container.querySelector('#utility-trend-chart'), {
+      xLabels,
+      series: [
+        { label: '水道（個人負担）', color: seriesColor(1), values: waterSeries },
+        { label: 'ガス（個人負担）', color: seriesColor(2), values: gasSeries },
+        { label: '電気（個人負担）', color: seriesColor(0), values: elecSeries },
       ],
     });
   }

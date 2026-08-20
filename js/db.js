@@ -75,6 +75,8 @@ const DEFAULT_META = {
   company_name: '',
   fiscal_year_start_month: '4',
   default_utility_personal_pct: '40',
+  founding_year: '',
+  founding_month: '',
 };
 
 let SQL = null;
@@ -147,6 +149,20 @@ export function getMeta(key) {
 
 export function setMeta(key, value) {
   run('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', [key, String(value)]);
+}
+
+// 創業年月（設定されていれば、それより前の年月は選べないようにする）
+export function getFoundingDate() {
+  const y = Number(getMeta('founding_year'));
+  const m = Number(getMeta('founding_month'));
+  if (!y || !m) return null;
+  return { year: y, month: m };
+}
+
+export function isMonthAllowed(year, month) {
+  const founding = getFoundingDate();
+  if (!founding) return true;
+  return year * 12 + month >= founding.year * 12 + founding.month;
 }
 
 /* ---------------- clients ---------------- */

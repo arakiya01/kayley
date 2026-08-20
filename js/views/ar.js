@@ -3,7 +3,7 @@ import {
 } from '../db.js';
 import { yen, monthLabel, last12Months, escapeHtml } from '../format.js';
 import { renderMonthBar } from './monthbar.js';
-import { lineChart, barChart, emptyChart } from '../charts.js';
+import { lineChart, emptyChart } from '../charts.js';
 import { seriesColor, foldSeriesArrays } from '../colors.js';
 
 function unpaidStreak(ledger, year, month) {
@@ -38,10 +38,6 @@ export function render(container, ctx) {
         <button class="btn ghost" id="add-client-btn">＋ 得意先を追加</button>
       </div>
       <div id="ar-table-slot"></div>
-    </div>
-    <div class="card">
-      <h2>残高推移（直近12ヶ月）</h2>
-      <div id="ar-balance-chart"></div>
     </div>
     <div class="card">
       <h2>売上推移（直近12ヶ月）</h2>
@@ -180,21 +176,6 @@ export function render(container, ctx) {
     const months = last12Months(year, month);
     const xLabels = months.map((m) => monthLabel(m.year, m.month).replace(/^\d+年/, ''));
 
-    const balanceSeriesRaw = activeClients.map((c) => ({
-      key: String(c.id),
-      label: c.name,
-      value: 0,
-      values: months.map((m) => {
-        const ledger = computeArLedger(c);
-        let bal = c.opening_balance || 0;
-        for (const r of ledger) {
-          if (r.year * 12 + r.month > m.year * 12 + m.month) break;
-          bal = r.closing;
-        }
-        return bal;
-      }),
-    }));
-
     const salesSeriesRaw = activeClients.map((c) => {
       const ledger = computeArLedger(c);
       const byKey = {};
@@ -205,24 +186,17 @@ export function render(container, ctx) {
       };
     });
 
-    const balChartEl = container.querySelector('#ar-balance-chart');
     const salesChartEl = container.querySelector('#ar-sales-chart');
 
     if (activeClients.length === 0) {
-      emptyChart(balChartEl, 'データがまだありません');
       emptyChart(salesChartEl, 'データがまだありません');
       return;
     }
 
-    const balFolded = foldSeriesArrays(balanceSeriesRaw);
     const salesFolded = foldSeriesArrays(salesSeriesRaw);
 
-    lineChart(balChartEl, {
+    lineChart(salesChartEl, {
       xLabels,
-      series: balFolded.map((s, i) => ({ label: s.label, color: seriesColor(i), values: s.values })),
-    });
-    barChart(salesChartEl, {
-      categories: xLabels,
       series: salesFolded.map((s, i) => ({ label: s.label, color: seriesColor(i), values: s.values })),
     });
   }

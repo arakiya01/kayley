@@ -3,7 +3,7 @@ import {
 } from '../db.js';
 import { yen, monthLabel, last12Months } from '../format.js';
 import { renderMonthBar } from './monthbar.js';
-import { lineChart } from '../charts.js';
+import { lineChart, donutChart } from '../charts.js';
 import { seriesColor } from '../colors.js';
 
 const DEDUCTION_FIELDS = [
@@ -88,6 +88,10 @@ export function render(container, ctx) {
       </div>
     </div>
     <div class="card">
+      <h2>当月の内訳</h2>
+      <div id="pay-breakdown-chart"></div>
+    </div>
+    <div class="card">
       <h2>支給額・差引支給額の推移（直近12ヶ月）</h2>
       <div id="pay-trend-chart"></div>
     </div>
@@ -132,7 +136,22 @@ export function render(container, ctx) {
     container.querySelector('#utility-deduction-display').innerHTML = `${yen(d.utility_deduction)}<span class="unit">円</span>`;
     const deductionTotal = DEDUCTION_FIELDS.reduce((a, f) => a + (entry[f.key] || 0), 0) + d.rent_deduction + d.utility_deduction;
     container.querySelector('#deduction-total').innerHTML = `${yen(deductionTotal)}<span class="unit">円</span>`;
-    container.querySelector('#net-pay').innerHTML = `${yen(entry.gross_pay - deductionTotal)}<span class="unit">円</span>`;
+    const net = entry.gross_pay - deductionTotal;
+    container.querySelector('#net-pay').innerHTML = `${yen(net)}<span class="unit">円</span>`;
+
+    const socialInsurance = (entry.health_insurance || 0) + (entry.nursing_care_insurance || 0)
+      + (entry.pension || 0) + (entry.child_support_levy || 0);
+    donutChart(container.querySelector('#pay-breakdown-chart'), {
+      centerLabel: '差引支給額（手取り）',
+      centerValue: net,
+      segments: [
+        { label: '差引支給額（手取り）', color: seriesColor(0), value: Math.max(0, net) },
+        { label: '社会保険料', color: seriesColor(1), value: socialInsurance },
+        { label: '源泉所得税', color: seriesColor(2), value: entry.withholding_tax || 0 },
+        { label: '家賃・光熱費控除', color: seriesColor(3), value: d.rent_deduction + d.utility_deduction },
+      ],
+    });
+
     renderChart();
   }
 

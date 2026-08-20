@@ -6,6 +6,9 @@ export function render(container) {
   const companyName = getMeta('company_name') || '';
   const fyStart = getMeta('fiscal_year_start_month') || '4';
   const defaultPct = getMeta('default_utility_personal_pct') || '40';
+  const foundingYear = getMeta('founding_year') || '';
+  const foundingMonth = getMeta('founding_month') || '';
+  const thisYear = new Date().getFullYear();
   const clients = listClients({ includeArchived: true });
 
   container.innerHTML = `
@@ -14,6 +17,14 @@ export function render(container) {
       <div class="field-row">
         <div class="field-label">会社名</div>
         <input type="text" id="company_name" value="${escapeHtml(companyName)}">
+      </div>
+      <div class="field-row">
+        <div class="field-label">創業年月<span class="hint">この年月より前は記帳できないようにします（未設定なら制限なし）</span></div>
+        <input type="number" id="founding_year" placeholder="例: 2024" value="${escapeHtml(foundingYear)}" min="1990" max="${thisYear + 1}">
+        <select id="founding_month">
+          <option value="">月を選択</option>
+          ${Array.from({ length: 12 }, (_, i) => i + 1).map((m) => `<option value="${m}" ${String(m) === String(foundingMonth) ? 'selected' : ''}>${m}月</option>`).join('')}
+        </select>
       </div>
       <div class="field-row">
         <div class="field-label">会計年度の開始月<span class="hint">ダッシュボードの年度累計に使用</span></div>
@@ -59,6 +70,8 @@ export function render(container) {
   `;
 
   container.querySelector('#company_name').addEventListener('change', (e) => setMeta('company_name', e.target.value));
+  container.querySelector('#founding_year').addEventListener('change', (e) => setMeta('founding_year', e.target.value));
+  container.querySelector('#founding_month').addEventListener('change', (e) => setMeta('founding_month', e.target.value));
   container.querySelector('#fy_start').addEventListener('change', (e) => setMeta('fiscal_year_start_month', e.target.value));
   container.querySelector('#default_pct').addEventListener('change', (e) => setMeta('default_utility_personal_pct', e.target.value));
 

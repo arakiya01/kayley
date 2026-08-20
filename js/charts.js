@@ -228,6 +228,108 @@ export function barChart(container, opts) {
   }
 }
 
+/**
+ * donutChart: 内訳を円環グラフで表示。
+ * opts: { segments: [{label,color,value}], centerLabel, centerValue, yFormat, size }
+ */
+export function donutChart(container, opts) {
+  const { segments, centerLabel, centerValue, yFormat = yen, size = 220 } = opts;
+  container.innerHTML = '';
+  const total = segments.reduce((a, s) => a + Math.max(0, s.value), 0);
+  if (total <= 0) {
+    emptyChart(container, 'データがまだありません');
+    return;
+  }
+
+  const wrap = document.createElement('div');
+  wrap.className = 'chart-wrap';
+  wrap.style.display = 'flex';
+  wrap.style.alignItems = 'center';
+  wrap.style.gap = '28px';
+  wrap.style.flexWrap = 'wrap';
+  container.appendChild(wrap);
+
+  const thickness = size * 0.16;
+  const r = size / 2 - thickness / 2 - 4;
+  const cx = size / 2, cy = size / 2;
+  const gap = segments.length > 1 ? 1.4 : 0;
+
+  const svgWrap = document.createElement('div');
+  svgWrap.style.position = 'relative';
+  svgWrap.style.width = `${size}px`;
+  svgWrap.style.flexShrink = '0';
+
+  const svg = el('svg', { viewBox: `0 0 ${size} ${size}`, width: size, height: size, role: 'img' });
+  const track = el('circle', {
+    cx, cy, r, fill: 'none', stroke: 'var(--hairline, #DAD1B8)', 'stroke-width': thickness,
+  });
+  svg.appendChild(track);
+
+  let cumulative = 0;
+  const arcs = [];
+  segments.forEach((s) => {
+    const pct = (Math.max(0, s.value) / total) * 100;
+    const circle = el('circle', {
+      cx, cy, r, fill: 'none', stroke: s.color, 'stroke-width': thickness,
+      'stroke-linecap': pct > 0.5 ? 'round' : 'butt',
+      'stroke-dasharray': `${Math.max(0, pct - gap)} ${100 - Math.max(0, pct - gap)}`,
+      'stroke-dashoffset': -cumulative,
+      'pathLength': 100,
+      transform: `rotate(-90 ${cx} ${cy})`,
+    });
+    svg.appendChild(circle);
+    arcs.push({ circle, s, pct });
+    cumulative += pct;
+  });
+
+  const centerDiv = document.createElement('div');
+  centerDiv.style.position = 'absolute';
+  centerDiv.style.inset = '0';
+  centerDiv.style.display = 'flex';
+  centerDiv.style.flexDirection = 'column';
+  centerDiv.style.alignItems = 'center';
+  centerDiv.style.justifyContent = 'center';
+  centerDiv.style.textAlign = 'center';
+  centerDiv.innerHTML = `
+    <div style="font-size:11px;color:var(--ink-muted);margin-bottom:4px">${centerLabel}</div>
+    <div class="num" style="font-size:22px;font-weight:700;color:var(--ink)">${yFormat(centerValue)}</div>
+  `;
+
+  svgWrap.appendChild(svg);
+  svgWrap.appendChild(centerDiv);
+  wrap.appendChild(svgWrap);
+
+  const legend = document.createElement('div');
+  legend.style.display = 'flex';
+  legend.style.flexDirection = 'column';
+  legend.style.gap = '8px';
+  legend.style.fontSize = '13px';
+  legend.innerHTML = segments.map((s) => {
+    const pct = ((Math.max(0, s.value) / total) * 100).toFixed(1);
+    return `
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="swatch" style="background:${s.color};width:10px;height:10px;border-radius:2px;flex-shrink:0"></span>
+        <span style="color:var(--ink-soft)">${s.label}</span>
+        <span class="num" style="margin-left:auto;padding-left:14px">${yFormat(s.value)}<span style="color:var(--ink-muted);font-size:11px"> (${pct}%)</span></span>
+      </div>
+    `;
+  }).join('');
+  wrap.appendChild(legend);
+
+  const tip = ensureTooltip(container);
+  arcs.forEach(({ circle, s, pct }) => {
+    circle.style.cursor = 'pointer';
+    circle.addEventListener('mousemove', (e) => {
+      tip.innerHTML = `<div class="t-row"><span><span class="t-swatch" style="background:${s.color}"></span>${s.label}</span><span class="num">${yFormat(s.value)} (${pct.toFixed(1)}%)</span></div>`;
+      tip.style.display = 'block';
+      const bounds = container.getBoundingClientRect();
+      tip.style.left = `${e.clientX - bounds.left + 14}px`;
+      tip.style.top = `${e.clientY - bounds.top + 10}px`;
+    });
+    circle.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+  });
+}
+
 export function emptyChart(container, message) {
   container.innerHTML = `<div class="empty-state"><div class="display">${message}</div></div>`;
 }
