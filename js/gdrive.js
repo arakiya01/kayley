@@ -5,7 +5,7 @@
 import { getMeta, setMeta } from './db.js';
 
 const GIS_SRC = 'https://accounts.google.com/gsi/client';
-const FOLDER_NAME = 'Kayley - 証憑';
+const FOLDER_NAME = 'Kayley';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
 const SESSION_KEY = 'kayley_gdrive_session';

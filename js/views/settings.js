@@ -104,7 +104,7 @@ export function render(container) {
     <div class="card">
       <h2>Google Drive連携（証憑の保存）</h2>
       <div class="card-note">
-        領収書・請求書などのファイルを、あなた自身のGoogleドライブ内の専用フォルダ（「Kayley - 証憑」）に保存できるようにします。
+        領収書・請求書などのファイルを、あなた自身のGoogleドライブ内の専用フォルダ（「Kayley」）に保存できるようにします。
         このアプリにサーバーは無く、ブラウザから直接Googleへ送信します。使用する権限は <strong>drive.file</strong>（このアプリが作成したファイルにしか触れない、最も限定的な権限）のみで、ドライブ内の他のファイルは一切見えません。
       </div>
       ${showClientIdField ? `

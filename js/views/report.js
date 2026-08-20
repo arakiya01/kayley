@@ -127,7 +127,7 @@ export function render(container, ctx) {
       <h2>証憑（領収書・請求書）</h2>
       <div class="card-note no-print">
         ${gdriveConfigured
-          ? 'あなたのGoogleドライブの「Kayley - 証憑」フォルダに保存されます。'
+          ? 'あなたのGoogleドライブの「Kayley」フォルダに保存されます。'
           : 'Google Driveが未設定です。「設定」タブから連携すると、ここでファイルをアップロードできます。'}
       </div>
       <div class="toolbar no-print">
