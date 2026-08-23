@@ -1,6 +1,7 @@
-import { openDatabase, getMeta, getFoundingDate } from './db.js';
+import { openDatabase, getMeta, getFoundingDate, exportBytes } from './db.js';
 import { todayYearMonth } from './format.js';
 import { applyTheme } from './theme.js';
+import * as gdrive from './gdrive.js';
 import * as dashboard from './views/dashboard.js';
 import * as ar from './views/ar.js';
 import * as rent from './views/rent.js';
@@ -99,6 +100,10 @@ async function main() {
   if (!location.hash) location.hash = `#/${state.tab}`;
   renderShell();
   renderView();
+
+  // すでにGoogle Driveに接続済み（同じタブ内で維持されているセッション）で、自動バックアップが
+  // オンなら、前回から24時間以上経っていた場合だけ静かにバックアップする。新規にログイン画面は開かない。
+  gdrive.maybeAutoBackup(exportBytes);
 }
 
 main();

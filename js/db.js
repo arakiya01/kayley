@@ -101,6 +101,8 @@ const DEFAULT_META = {
   founding_month: '',
   gdrive_client_id: '',
   gdrive_folder_id: '',
+  gdrive_auto_backup: '0',
+  gdrive_last_backup_at: '',
   theme_bg_color: '#FBF8F1',
   theme_card_color: '#F7F1E3',
   theme_ink_color: '#22344A',

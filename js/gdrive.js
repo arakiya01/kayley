@@ -170,10 +170,7 @@ async function ensureMonthCategoryFolder(year, month, category) {
   return findOrCreateFolder(categoryName, monthId);
 }
 
-export async function uploadFile(file, { year, month, category = 'receipt', namePrefix = '' }) {
-  await ensureConnected();
-  const folderId = await ensureMonthCategoryFolder(year, month, category);
-  const name = namePrefix ? `${namePrefix}_${file.name}` : file.name;
+async function uploadToFolder(file, folderId, name) {
   const metadata = { name, parents: [folderId] };
 
   const boundary = `kayley-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -192,6 +189,47 @@ export async function uploadFile(file, { year, month, category = 'receipt', name
   });
   if (!res.ok) throw new Error('Google Driveへのアップロードに失敗しました');
   return res.json();
+}
+
+export async function uploadFile(file, { year, month, category = 'receipt', namePrefix = '' }) {
+  await ensureConnected();
+  const folderId = await ensureMonthCategoryFolder(year, month, category);
+  const name = namePrefix ? `${namePrefix}_${file.name}` : file.name;
+  return uploadToFolder(file, folderId, name);
+}
+
+// バックアップ（DBファイルまるごと）は Kayley / バックアップ フォルダにまとめる。
+const BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24時間
+
+async function ensureBackupFolder() {
+  const rootId = await ensureRootFolder();
+  return findOrCreateFolder('バックアップ', rootId);
+}
+
+export async function backupDatabase(bytes) {
+  await ensureConnected();
+  const folderId = await ensureBackupFolder();
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const name = `kayley-backup-${stamp}.sqlite`;
+  const file = new File([bytes], name, { type: 'application/x-sqlite3' });
+  const result = await uploadToFolder(file, folderId, name);
+  setMeta('gdrive_last_backup_at', new Date().toISOString());
+  return result;
+}
+
+// すでに接続済みの場合だけ動く（新たにログイン画面を開くことはしない＝予期しないポップアップを出さないため）。
+// 自動バックアップがオンで、前回から24時間以上経っていれば、その場でバックアップする。
+export async function maybeAutoBackup(exportBytesFn) {
+  if (getMeta('gdrive_auto_backup') !== '1') return false;
+  if (!isConnected()) return false;
+  const lastAt = getMeta('gdrive_last_backup_at');
+  if (lastAt && Date.now() - new Date(lastAt).getTime() < BACKUP_INTERVAL_MS) return false;
+  try {
+    await backupDatabase(exportBytesFn());
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function deleteFile(fileId) {

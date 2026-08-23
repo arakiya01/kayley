@@ -25,6 +25,8 @@ export function render(container) {
   const gdriveClientId = getMeta('gdrive_client_id') || '';
   const gdriveConnected = gdrive.isConnected();
   const showClientIdField = showClientIdOverride || !gdriveClientId;
+  const gdriveAutoBackup = getMeta('gdrive_auto_backup') === '1';
+  const gdriveLastBackupAt = getMeta('gdrive_last_backup_at') || '';
 
   const bgColor = getMeta('theme_bg_color') || '#FBF8F1';
   const cardColor = getMeta('theme_card_color') || '#F7F1E3';
@@ -126,6 +128,19 @@ export function render(container) {
         <button class="btn ghost" id="gdrive-disconnect-btn" ${gdriveConnected ? '' : 'disabled'}>切断する</button>
       </div>
       <div id="gdrive-status-note" class="card-note"></div>
+
+      <div class="card-note" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--hairline)">
+        DBファイルのバックアップ（Kayley / バックアップ フォルダに保存）
+      </div>
+      <div class="field-row">
+        <div class="field-label">自動バックアップ<span class="hint">接続済みの状態でアプリを使うたびに確認し、前回から24時間以上経っていたら自動で保存します</span></div>
+        <input type="checkbox" id="gdrive_auto_backup" style="width:auto;justify-self:start" ${gdriveAutoBackup ? 'checked' : ''}>
+      </div>
+      <div class="toolbar">
+        <span class="card-note" style="margin:0">${gdriveLastBackupAt ? `最終バックアップ: ${new Date(gdriveLastBackupAt).toLocaleString('ja-JP')}` : 'まだバックアップされていません'}</span>
+        <span class="spacer"></span>
+        <button class="btn ghost" id="gdrive-backup-now-btn">今すぐバックアップ</button>
+      </div>
     </div>
 
     <div class="card">
@@ -288,6 +303,7 @@ export function render(container) {
       await gdrive.connect(clientId);
       showClientIdOverride = false;
       render(container);
+      gdrive.maybeAutoBackup(exportBytes);
     } catch (err) {
       statusNote.textContent = `接続に失敗しました: ${err.message}`;
     }
@@ -296,6 +312,23 @@ export function render(container) {
   container.querySelector('#gdrive-disconnect-btn').addEventListener('click', () => {
     gdrive.disconnect();
     render(container);
+  });
+
+  container.querySelector('#gdrive_auto_backup').addEventListener('change', (e) => {
+    setMeta('gdrive_auto_backup', e.target.checked ? '1' : '0');
+  });
+
+  container.querySelector('#gdrive-backup-now-btn').addEventListener('click', async () => {
+    const btn = container.querySelector('#gdrive-backup-now-btn');
+    btn.disabled = true;
+    statusNote.textContent = 'バックアップ中…';
+    try {
+      await gdrive.backupDatabase(exportBytes());
+      render(container);
+    } catch (err) {
+      statusNote.textContent = `バックアップに失敗しました: ${err.message}`;
+      btn.disabled = false;
+    }
   });
 
   function updateContrastDisplay() {
