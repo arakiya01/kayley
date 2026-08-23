@@ -1,8 +1,10 @@
 import {
   listClientsForMonths, computeArLedger, getRentUtilityEntry, computeUtilityPersonalTotal,
-  getOfficerPayEntry, resolveOfficerDeductions, getMeta, getMonthStatus,
+  getOfficerPayEntry, resolveOfficerDeductions, getMeta, getMonthStatus, getFoundingDate,
 } from '../db.js';
-import { yen, monthLabel, last12Months, addMonths } from '../format.js';
+import {
+  yen, monthLabel, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading,
+} from '../format.js';
 import { renderMonthBar } from './monthbar.js';
 import { lineChart, emptyChart } from '../charts.js';
 import { seriesColor } from '../colors.js';
@@ -35,10 +37,12 @@ function netPayFor(year, month) {
 
 export function render(container, ctx) {
   const { year, month } = ctx;
-  const months = last12Months(year, month);
+  const fyStartMonth = Number(getMeta('fiscal_year_start_month') || 4);
+  const fyStartYear = fiscalYearStartOf(year, month, fyStartMonth);
+  const months = fiscalYearMonths(fyStartYear, fyStartMonth);
+  const highlightIndex = months.findIndex((m) => m.year === year && m.month === month);
   const clients = listClientsForMonths(months);
   const companyName = getMeta('company_name') || '(会社名未設定)';
-  const fyStart = Number(getMeta('fiscal_year_start_month') || 4);
 
   const thisMonth = monthSalesAndPayment(clients, year, month);
   const rentEntry = getRentUtilityEntry(year, month);
@@ -46,19 +50,16 @@ export function render(container, ctx) {
   const netPay = netPayFor(year, month);
   const status = getMonthStatus(year, month);
 
-  // fiscal-year-to-date sales
-  let fyYear = year;
-  if (month < fyStart) fyYear = year - 1;
+  // 今期の売上累計（今期の各月の実績を合算。まだ来ていない月は実績0なので自然に足されない）
+  const monthKeys = new Set(months.map((m) => `${m.year}-${m.month}`));
   let fySum = 0;
   clients.forEach((c) => {
-    const ledger = computeArLedger(c);
-    ledger.forEach((r) => {
-      const idx = r.year * 12 + r.month;
-      const fyStartIdx = fyYear * 12 + (fyStart - 1);
-      const targetIdx = year * 12 + (month - 1);
-      if (idx - 1 >= fyStartIdx && idx - 1 <= targetIdx) fySum += r.sales;
+    computeArLedger(c).forEach((r) => {
+      if (monthKeys.has(`${r.year}-${r.month}`)) fySum += r.sales;
     });
   });
+
+  const periodHeading = fiscalPeriodHeading(year, month, fyStartMonth, getFoundingDate());
 
   container.innerHTML = `
     <div id="month-bar-slot"></div>
@@ -87,7 +88,7 @@ export function render(container, ctx) {
           <div class="value num">${netPay == null ? '—' : yen(netPay)}<span class="unit">円</span></div>
         </div>
         <div class="stat-tile">
-          <div class="label">${fyStart}月始まり年度 売上累計</div>
+          <div class="label">今期の売上累計</div>
           <div class="value num">${yen(fySum)}<span class="unit">円</span></div>
         </div>
       </div>
@@ -98,7 +99,8 @@ export function render(container, ctx) {
       </div>
     </div>
     <div class="card">
-      <h2>売上推移（直近12ヶ月）</h2>
+      <h2>売上推移</h2>
+      <div class="card-note">${periodHeading}</div>
       <div id="sales-trend"></div>
     </div>
   `;
@@ -107,7 +109,7 @@ export function render(container, ctx) {
     year, month, onChange: ctx.setMonth, showFinalize: false,
   });
 
-  const xLabels = months.map((m) => monthLabel(m.year, m.month).replace(/^\d+年/, ''));
+  const xLabels = months.map((m) => `${m.month}月`);
 
   if (clients.length === 0) {
     emptyChart(container.querySelector('#sales-trend'), '得意先が登録されるとここに表示されます');
@@ -116,6 +118,7 @@ export function render(container, ctx) {
 
     lineChart(container.querySelector('#sales-trend'), {
       xLabels,
+      highlightIndex,
       series: [{ label: '売上合計', color: seriesColor(1), values: salesTotals }],
     });
   }

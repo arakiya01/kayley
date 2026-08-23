@@ -4,7 +4,7 @@ import {
   listAttachments, addAttachment, removeAttachment,
 } from '../db.js';
 import {
-  yen, monthLabel, monthShort, last12Months, escapeHtml, fiscalYearStartOf, fiscalYearMonths,
+  yen, monthShort, escapeHtml, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading,
 } from '../format.js';
 import { renderMonthBar } from './monthbar.js';
 import { renderFySelector } from './fyselector.js';
@@ -52,7 +52,8 @@ export function render(container, ctx) {
       <div id="ar-table-slot"></div>
     </div>
     <div class="card">
-      <h2>売上推移（直近12ヶ月）</h2>
+      <h2>売上推移</h2>
+      <div class="card-note">${fiscalPeriodHeading(year, month, fyStartMonth, getFoundingDate())}</div>
       <div id="ar-sales-chart"></div>
     </div>
     <div id="add-client-form-slot"></div>
@@ -325,9 +326,10 @@ export function render(container, ctx) {
   }
 
   function renderCharts() {
-    const months = last12Months(year, month);
+    const months = fiscalYearMonths(fiscalYearStartOf(year, month, fyStartMonth), fyStartMonth);
+    const highlightIndex = months.findIndex((m) => m.year === year && m.month === month);
     const activeClients = listClientsForMonths(months);
-    const xLabels = months.map((m) => monthLabel(m.year, m.month).replace(/^\d+年/, ''));
+    const xLabels = months.map((m) => `${m.month}月`);
 
     const salesSeriesRaw = activeClients.map((c) => {
       const ledger = computeArLedger(c);
@@ -350,6 +352,7 @@ export function render(container, ctx) {
 
     lineChart(salesChartEl, {
       xLabels,
+      highlightIndex,
       series: salesFolded.map((s, i) => ({ label: s.label, color: seriesColor(i), values: s.values })),
     });
   }

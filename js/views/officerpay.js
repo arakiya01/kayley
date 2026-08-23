@@ -1,7 +1,7 @@
 import {
   getOfficerPayEntry, upsertOfficerPayEntry, resolveOfficerDeductions, prevMonth, getMeta, getFoundingDate,
 } from '../db.js';
-import { yen, monthLabel, monthShort, last12Months, fiscalYearStartOf, fiscalYearMonths } from '../format.js';
+import { yen, monthLabel, monthShort, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading } from '../format.js';
 import { renderMonthBar } from './monthbar.js';
 import { renderFySelector } from './fyselector.js';
 import { enableGridPaste } from './gridpaste.js';
@@ -108,7 +108,8 @@ export function render(container, ctx) {
       </div>
     </div>
     <div class="card">
-      <h2>支給額・差引支給額の推移（直近12ヶ月）</h2>
+      <h2>支給額・差引支給額の推移</h2>
+      <div class="card-note">${fiscalPeriodHeading(year, month, fyStartMonth, getFoundingDate())}</div>
       <div id="pay-trend-chart"></div>
     </div>
   `;
@@ -196,8 +197,9 @@ export function render(container, ctx) {
   recompute(state);
 
   function renderChart() {
-    const months = last12Months(year, month);
-    const xLabels = months.map((m) => monthLabel(m.year, m.month).replace(/^\d+年/, ''));
+    const months = fiscalYearMonths(fiscalYearStartOf(year, month, fyStartMonth), fyStartMonth);
+    const highlightIndex = months.findIndex((m) => m.year === year && m.month === month);
+    const xLabels = months.map((m) => `${m.month}月`);
     const grossSeries = [];
     const netSeries = [];
     months.forEach((m) => {
@@ -210,6 +212,7 @@ export function render(container, ctx) {
     });
     lineChart(container.querySelector('#pay-trend-chart'), {
       xLabels,
+      highlightIndex,
       series: [
         { label: '支給額', color: seriesColor(1), values: grossSeries },
         { label: '差引支給額', color: seriesColor(0), values: netSeries },

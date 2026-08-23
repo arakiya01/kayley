@@ -1,6 +1,6 @@
 import { getRentUtilityEntry, upsertRentUtilityEntry, computeUtilityPersonalTotal, getMeta, getFoundingDate } from '../db.js';
 import {
-  yen, monthLabel, monthShort, last12Months, fiscalYearStartOf, fiscalYearMonths,
+  yen, monthShort, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading,
 } from '../format.js';
 import { renderMonthBar } from './monthbar.js';
 import { renderFySelector } from './fyselector.js';
@@ -85,12 +85,13 @@ export function render(container, ctx) {
     </div>
     <div id="bulk-slot"></div>
     <div class="card">
-      <h2>個人負担額の推移（直近12ヶ月）</h2>
+      <h2>個人負担額の推移</h2>
+      <div class="card-note">${fiscalPeriodHeading(year, month, fyStartMonth, getFoundingDate())}</div>
       <div id="rent-trend-chart"></div>
     </div>
     <div class="card">
-      <h2>光熱費の推移（直近12ヶ月）</h2>
-      <div class="card-note">水道・ガス・電気の個人負担額（円）</div>
+      <h2>光熱費の推移</h2>
+      <div class="card-note">水道・ガス・電気の個人負担額（円）・${fiscalPeriodHeading(year, month, fyStartMonth, getFoundingDate())}</div>
       <div id="utility-trend-chart"></div>
     </div>
   `;
@@ -153,8 +154,9 @@ export function render(container, ctx) {
   recomputeAndSave();
 
   function renderChart() {
-    const months = last12Months(year, month);
-    const xLabels = months.map((m) => monthLabel(m.year, m.month).replace(/^\d+年/, ''));
+    const months = fiscalYearMonths(fiscalYearStartOf(year, month, fyStartMonth), fyStartMonth);
+    const highlightIndex = months.findIndex((m) => m.year === year && m.month === month);
+    const xLabels = months.map((m) => `${m.month}月`);
     const rentSeries = [];
     const utilitySeries = [];
     months.forEach((m) => {
@@ -164,6 +166,7 @@ export function render(container, ctx) {
     });
     lineChart(container.querySelector('#rent-trend-chart'), {
       xLabels,
+      highlightIndex,
       series: [
         { label: '家賃個人負担', color: seriesColor(0), values: rentSeries },
         { label: '光熱費個人負担', color: seriesColor(1), values: utilitySeries },
@@ -179,6 +182,7 @@ export function render(container, ctx) {
     });
     lineChart(container.querySelector('#utility-trend-chart'), {
       xLabels,
+      highlightIndex,
       series: [
         { label: '水道（個人負担）', color: seriesColor(1), values: waterSeries },
         { label: 'ガス（個人負担）', color: seriesColor(2), values: gasSeries },

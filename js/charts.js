@@ -44,7 +44,7 @@ function legendHtml(series) {
  * opts: { xLabels: string[], series: [{label,color,values:number[]}], yFormat, height }
  */
 export function lineChart(container, opts) {
-  const { xLabels, series, yFormat = yen, height = 220 } = opts;
+  const { xLabels, series, yFormat = yen, height = 220, highlightIndex = null } = opts;
   container.innerHTML = '';
   const wrap = document.createElement('div');
   wrap.className = 'chart-wrap';
@@ -76,9 +76,23 @@ export function lineChart(container, opts) {
   // baseline
   svg.appendChild(el('line', { x1: padL, x2: width - padR, y1: y(0), y2: y(0), stroke: 'var(--grid-line, #C9BFA6)', 'stroke-width': 1.2 }));
 
+  // 「今見ている月」を示すアクセント帯（帯の上に軸ラベル・データ点が重なる）
+  if (highlightIndex != null && highlightIndex >= 0) {
+    const bandW = xLabels.length > 1 ? plotW / (xLabels.length - 1) : plotW;
+    svg.appendChild(el('rect', {
+      x: x(highlightIndex) - bandW / 2, y: padT, width: bandW, height: plotH,
+      fill: 'var(--hanko-wash, rgba(178,58,46,0.08))',
+    }));
+  }
+
   // x labels
   xLabels.forEach((lbl, i) => {
-    const t = el('text', { x: x(i), y: height - 8, 'text-anchor': 'middle', 'font-size': 10.5, fill: 'var(--ink-muted, #7C8794)' });
+    const isCurrent = i === highlightIndex;
+    const t = el('text', {
+      x: x(i), y: height - 8, 'text-anchor': 'middle', 'font-size': 10.5,
+      fill: isCurrent ? 'var(--hanko, #B23A2E)' : 'var(--ink-muted, #7C8794)',
+      'font-weight': isCurrent ? 700 : 400,
+    });
     t.textContent = lbl;
     svg.appendChild(t);
   });
@@ -88,8 +102,15 @@ export function lineChart(container, opts) {
     const pts = s.values.map((v, i) => [x(i), y(v)]);
     const d = pts.map((p, i) => (i === 0 ? `M ${p[0]} ${p[1]}` : `L ${p[0]} ${p[1]}`)).join(' ');
     svg.appendChild(el('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linecap': 'round' }));
-    pts.forEach(([px, py]) => {
-      svg.appendChild(el('circle', { cx: px, cy: py, r: 3.4, fill: 'var(--card, #F7F1E3)', stroke: s.color, 'stroke-width': 2 }));
+    pts.forEach(([px, py], i) => {
+      const isCurrent = i === highlightIndex;
+      svg.appendChild(el('circle', {
+        cx: px, cy: py, r: isCurrent ? 5.5 : 3.4, fill: 'var(--card, #F7F1E3)',
+        stroke: s.color, 'stroke-width': isCurrent ? 2.5 : 2,
+      }));
+      if (isCurrent) {
+        svg.appendChild(el('circle', { cx: px, cy: py, r: 8.5, fill: 'none', stroke: 'var(--hanko, #B23A2E)', 'stroke-width': 1.4 }));
+      }
     });
     pointGroups.push(pts);
   });
@@ -150,7 +171,7 @@ export function lineChart(container, opts) {
  * opts: { categories: string[], series: [{label,color,values:number[]}], yFormat, height }
  */
 export function barChart(container, opts) {
-  const { categories, series, yFormat = yen, height = 240 } = opts;
+  const { categories, series, yFormat = yen, height = 240, highlightIndex = null } = opts;
   container.innerHTML = '';
   const wrap = document.createElement('div');
   wrap.className = 'chart-wrap';
@@ -186,6 +207,12 @@ export function barChart(container, opts) {
 
   categories.forEach((cat, ci) => {
     const groupX = padL + ci * groupW;
+    if (ci === highlightIndex) {
+      svg.appendChild(el('rect', {
+        x: groupX, y: padT, width: groupW, height: plotH,
+        fill: 'var(--hanko-wash, rgba(178,58,46,0.08))',
+      }));
+    }
     series.forEach((s, si) => {
       const v = s.values[ci] || 0;
       const bx = groupX + barGap + si * (barW + barGap);
@@ -198,7 +225,12 @@ export function barChart(container, opts) {
       svg.appendChild(rect);
       bars.push({ rect, cat, label: s.label, color: s.color, value: v, cx: bx + barW / 2 });
     });
-    const t = el('text', { x: groupX + groupW / 2, y: height - 8, 'text-anchor': 'middle', 'font-size': 10.5, fill: 'var(--ink-muted, #7C8794)' });
+    const isCurrent = ci === highlightIndex;
+    const t = el('text', {
+      x: groupX + groupW / 2, y: height - 8, 'text-anchor': 'middle', 'font-size': 10.5,
+      fill: isCurrent ? 'var(--hanko, #B23A2E)' : 'var(--ink-muted, #7C8794)',
+      'font-weight': isCurrent ? 700 : 400,
+    });
     t.textContent = cat;
     svg.appendChild(t);
   });

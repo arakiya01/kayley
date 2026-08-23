@@ -45,6 +45,17 @@ export function fiscalYearMonths(fyStartYear, fyStartMonth) {
   return Array.from({ length: 12 }, (_, i) => addMonths(fyStartYear, fyStartMonth, i));
 }
 
+// グラフの見出し用: 「第2期（2026年8月〜2027年7月）」（創業年月が未設定なら期番号なしで期間だけ）
+export function fiscalPeriodHeading(year, month, fyStartMonth, foundingDate) {
+  const fyStartYear = fiscalYearStartOf(year, month, fyStartMonth);
+  const months = fiscalYearMonths(fyStartYear, fyStartMonth);
+  const range = `${monthLabel(months[0].year, months[0].month)} 〜 ${monthLabel(months[11].year, months[11].month)}`;
+  if (!foundingDate) return range;
+  const foundingFyYear = fiscalYearStartOf(foundingDate.year, foundingDate.month, fyStartMonth);
+  const periodNumber = fyStartYear - foundingFyYear + 1;
+  return `第${periodNumber}期（${range}）`;
+}
+
 export function escapeHtml(str) {
   if (str == null) return '';
   return String(str)
