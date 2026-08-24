@@ -29,14 +29,15 @@ export function render(container, ctx) {
   if (bulkFyStartYear == null) bulkFyStartYear = fiscalYearStartOf(year, month, fyStartMonth);
 
   container.innerHTML = `
-    <div class="toolbar">
-      <span class="spacer"></span>
-      <button class="btn ghost" id="bulk-toggle-btn">${bulkMode ? '月次入力に戻る' : '📋 一括入力（年度）'}</button>
-    </div>
+    ${bulkMode ? `<div class="toolbar"><span class="spacer"></span><button class="btn ghost bulk-toggle-btn">月次入力に戻る</button></div>` : ''}
     <div id="bulk-slot"></div>
     <div id="single-month-slot" style="${bulkMode ? 'display:none' : ''}">
       <div class="card payslip">
         <div class="payslip-header"><h2>役員報酬明細</h2><span>${monthLabel(year, month)}</span></div>
+        <div class="toolbar">
+          <span class="spacer"></span>
+          <button class="btn ghost bulk-toggle-btn">📋 一括入力（年度）</button>
+        </div>
         <div class="payslip-grid">
           <section>
             <div class="section-heading">支給</div>
@@ -76,10 +77,10 @@ export function render(container, ctx) {
     </div>
   `;
 
-  container.querySelector('#bulk-toggle-btn').addEventListener('click', () => {
+  container.querySelectorAll('.bulk-toggle-btn').forEach((btn) => btn.addEventListener('click', () => {
     bulkMode = !bulkMode;
     render(container, ctx);
-  });
+  }));
 
   if (bulkMode) {
     renderBulkTable();

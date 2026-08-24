@@ -99,7 +99,7 @@ export function render(container, ctx) {
     { name: '家賃・光熱費', tab: 'rent', done: completion.rent, value: `個人負担 ${personalBurden == null ? '—' : `${yen(personalBurden)}円`}` },
     { name: '役員報酬', tab: 'officer', done: completion.officer, value: `差引 ${netPay == null ? '—' : `${yen(netPay)}円`}` },
     { name: '経費', tab: 'expenses', done: completion.expenses, value: `明細${expenseTxnCount}件 ・ 領収書${expenseReceiptCount}件` },
-    { name: 'レポートを渡す', tab: 'report', done: completion.report, value: status && status.report_exported_at ? '出力済み' : '未出力', ctaLabel: '月次レポートを開く' },
+    { name: '月次レポート', tab: 'report', done: completion.report, value: status && status.report_exported_at ? '出力済み' : '未出力', ctaLabel: '月次レポートを開く' },
   ];
   const incomplete = sections.filter((section) => !section.done);
   const nextSection = incomplete[0];

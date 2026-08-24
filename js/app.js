@@ -48,8 +48,10 @@ function currentTabFromHash() {
 function renderShell() {
   const root = document.getElementById('app-shell');
   root.innerHTML = `
-    <header class="progress-spine" id="progress-spine"></header>
-    <div id="month-bar-slot"></div>
+    <header class="progress-spine" id="progress-spine">
+      <div id="spine-content"></div>
+      <div id="month-bar-slot"></div>
+    </header>
     <div id="view-root"></div>
   `;
 }
@@ -62,15 +64,14 @@ function renderProgressSpine() {
     { key: 'rent', label: '家賃・光熱費', done: completion.rent },
     { key: 'officer', label: '役員報酬', done: completion.officer },
     { key: 'expenses', label: '経費', done: completion.expenses },
-    { key: 'report', label: 'レポートを渡す', done: completion.report },
+    { key: 'report', label: '月次レポート', done: completion.report },
   ];
   const remaining = steps.filter((step) => !step.done).length;
-  document.getElementById('progress-spine').innerHTML = `
+  document.getElementById('spine-content').innerHTML = `
     <div class="spine-top">
       <a class="wordmark-link" href="#/dashboard"><span class="display">Kayley</span><small>SOLO BOOKKEEPING</small></a>
       <span class="spine-company">${companyName ? escapeHtml(companyName) : '<a href="#/settings">会社名を設定する</a>'}</span>
       <span class="spine-divider"></span>
-      <a class="dashboard-link ${state.tab === 'dashboard' ? 'active' : ''}" href="#/dashboard">概況</a>
       <a class="utility-link ${state.tab === 'settings' ? 'active' : ''}" href="#/settings">設定</a>
     </div>
     <nav class="workflow-tabs">

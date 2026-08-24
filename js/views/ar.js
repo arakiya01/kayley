@@ -237,7 +237,8 @@ export function render(container, ctx) {
           removeAttachment(Number(btn.dataset.id));
           renderTable();
         } catch (err) {
-          alert(err.message);
+          const statusEl = btn.closest('.invoice-cell').querySelector('.invoice-status');
+          statusEl.textContent = `削除できませんでした: ${err.message}`;
           btn.disabled = false;
         }
       });

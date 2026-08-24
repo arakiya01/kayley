@@ -280,6 +280,7 @@ export function render(container, ctx) {
                 </span>
                 <button class="btn ghost no-print delete-attachment-btn" data-id="${it.id}" data-drive-id="${escapeHtml(it.drive_file_id)}">削除</button>
               </div>
+              <div class="delete-attachment-status card-note no-print" style="margin:4px 0 0" role="alert"></div>
               <div class="attachment-preview" data-drive-id="${escapeHtml(it.drive_file_id)}" data-mime="${escapeHtml(it.mime_type || '')}" data-name="${escapeHtml(it.name)}"></div>
             </div>
           `;
@@ -299,7 +300,8 @@ export function render(container, ctx) {
           removeAttachment(Number(btn.dataset.id));
           renderAttachmentList();
         } catch (err) {
-          alert(err.message);
+          const statusEl = btn.closest('.attachment-item').querySelector('.delete-attachment-status');
+          statusEl.textContent = `削除できませんでした: ${err.message}`;
           btn.disabled = false;
         }
       });

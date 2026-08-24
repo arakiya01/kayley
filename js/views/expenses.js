@@ -357,7 +357,8 @@ export function render(container, ctx) {
           removeAttachment(Number(btn.dataset.id));
           renderTransactionTable(source);
         } catch (err) {
-          alert(err.message);
+          const statusEl = btn.closest('.receipt-cell').querySelector('.txn-receipt-status');
+          statusEl.textContent = `削除できませんでした: ${err.message}`;
           btn.disabled = false;
         }
       });
@@ -378,7 +379,10 @@ export function render(container, ctx) {
           ${items.map((it) => `
             <tr>
               <td>${fileChipHtml({ name: it.name, webViewLink: it.web_view_link })}</td>
-              <td class="num"><button class="btn ghost delete-expense-receipt-btn" data-id="${it.id}" data-drive-id="${escapeHtml(it.drive_file_id)}">削除</button></td>
+              <td class="num">
+                <button class="btn ghost delete-expense-receipt-btn" data-id="${it.id}" data-drive-id="${escapeHtml(it.drive_file_id)}">削除</button>
+                <span class="delete-receipt-status card-note" style="margin:4px 0 0;display:block" role="alert"></span>
+              </td>
             </tr>
           `).join('')}
         </tbody>
@@ -393,7 +397,8 @@ export function render(container, ctx) {
           removeAttachment(Number(btn.dataset.id));
           renderGeneralReceiptList();
         } catch (err) {
-          alert(err.message);
+          const statusEl = btn.closest('td').querySelector('.delete-receipt-status');
+          statusEl.textContent = `削除できませんでした: ${err.message}`;
           btn.disabled = false;
         }
       });
