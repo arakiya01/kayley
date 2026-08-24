@@ -1,6 +1,6 @@
 // 各画面共通の年月ナビゲーション。年度は前後の矢印かプルダウンで選び、
 // 月は各セクションの完了状況を示す帯から直接クリックして選ぶ。
-import { monthLabel, monthShort, fiscalYearStartOf, fiscalYearMonths, todayYearMonth } from '../format.js';
+import { monthLabel, monthShort, fiscalYearStartOf, fiscalYearMonths, todayYearMonth, fiscalPeriodHeading } from '../format.js';
 import { getSectionCompletion, isMonthAllowed, getMeta, getFoundingDate } from '../db.js';
 import { renderFySelector } from './fyselector.js';
 
@@ -13,34 +13,43 @@ export function renderMonthBar(container, { year, month, onChange }) {
   const today = todayYearMonth();
   const todayIdx = today.year * 12 + today.month;
   const currentFy = fiscalYearStartOf(today.year, today.month, fyStartMonth);
+  const currentFyEarliest = foundingDate ? fiscalYearStartOf(foundingDate.year, foundingDate.month, fyStartMonth) : currentFy - 6;
+  const periodLabel = foundingDate ? `第${fyStartYear - currentFyEarliest + 1}期` : `${monthLabel(fyStartYear, fyStartMonth)}〜`;
+  const periodTitle = fiscalPeriodHeading(year, month, fyStartMonth, foundingDate);
 
   container.innerHTML = `
     <div class="month-bar">
-      <div class="month-bar-main">
+      <button type="button" class="fy-toggle" id="fy-toggle" aria-expanded="false" title="${periodTitle}">
+        <span>${periodLabel}</span>
+        <span class="fy-toggle-caret">▾</span>
+      </button>
+      <div class="status-strip">
+        ${months.map((m, i) => {
+          const allowed = isMonthAllowed(m.year, m.month);
+          const isFuture = m.year * 12 + m.month > todayIdx;
+          let cls = 'critical';
+          let title = `${monthLabel(m.year, m.month)}：0件完了`;
+          if (!allowed) { cls = 'disabled'; title = `${monthLabel(m.year, m.month)}：創業前`; }
+          else if (isFuture) { cls = 'future'; title = `${monthLabel(m.year, m.month)}：未来`; }
+          else {
+            const completion = getSectionCompletion(m.year, m.month);
+            const doneCount = Object.values(completion).filter(Boolean).length;
+            cls = doneCount === 0 ? 'critical' : doneCount === 5 ? 'good' : 'warning';
+            title = `${monthLabel(m.year, m.month)}：${doneCount}件完了`;
+          }
+          return `
+            <button class="pill ${cls} ${i === currentIndex ? 'current' : ''}" title="${title}"
+              data-year="${m.year}" data-month="${m.month}" ${(!allowed || isFuture) ? 'disabled' : ''}>
+              <span class="dot"></span>
+              <span>${monthShort(m.month)}</span>
+            </button>
+          `;
+        }).join('')}
+      </div>
+    </div>
+    <div class="fy-panel" id="fy-panel">
+      <div class="fy-panel-inner">
         <div id="fy-selector-slot"></div>
-        <div class="status-strip">
-          ${months.map((m, i) => {
-            const allowed = isMonthAllowed(m.year, m.month);
-            const isFuture = m.year * 12 + m.month > todayIdx;
-            let cls = 'critical';
-            let title = `${monthLabel(m.year, m.month)}：0件完了`;
-            if (!allowed) { cls = 'disabled'; title = `${monthLabel(m.year, m.month)}：創業前`; }
-            else if (isFuture) { cls = 'future'; title = `${monthLabel(m.year, m.month)}：未来`; }
-            else {
-              const completion = getSectionCompletion(m.year, m.month);
-              const doneCount = Object.values(completion).filter(Boolean).length;
-              cls = doneCount === 0 ? 'critical' : doneCount === 5 ? 'good' : 'warning';
-              title = `${monthLabel(m.year, m.month)}：${doneCount}件完了`;
-            }
-            return `
-              <button class="pill ${cls} ${i === currentIndex ? 'current' : ''}" title="${title}"
-                data-year="${m.year}" data-month="${m.month}" ${(!allowed || isFuture) ? 'disabled' : ''}>
-                <span class="dot"></span>
-                <span>${monthShort(m.month)}</span>
-              </button>
-            `;
-          }).join('')}
-        </div>
       </div>
     </div>
   `;
@@ -51,6 +60,7 @@ export function renderMonthBar(container, { year, month, onChange }) {
     foundingDate,
     noteText: '',
     maxFyStartYear: currentFy,
+    showBadge: false,
     onChange: (newFyStartYear) => {
       const newMonths = fiscalYearMonths(newFyStartYear, fyStartMonth);
       // 前の期に移動したら最終月、次の期に移動したら初月を選択する
@@ -59,6 +69,13 @@ export function renderMonthBar(container, { year, month, onChange }) {
         : newMonths[currentIndex >= 0 ? currentIndex : 0];
       onChange(target.year, target.month);
     },
+  });
+
+  const fyToggle = container.querySelector('#fy-toggle');
+  const fyPanel = container.querySelector('#fy-panel');
+  fyToggle.addEventListener('click', () => {
+    const open = fyPanel.classList.toggle('open');
+    fyToggle.setAttribute('aria-expanded', String(open));
   });
 
   container.querySelectorAll('.status-strip .pill:not([disabled])').forEach((btn) => {

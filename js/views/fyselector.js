@@ -2,7 +2,7 @@
 import { fiscalYearMonths, fiscalYearStartOf, monthLabel, todayYearMonth } from '../format.js';
 
 export function renderFySelector(container, {
-  fyStartYear, fyStartMonth, foundingDate, noteText, onChange, maxFyStartYear = null,
+  fyStartYear, fyStartMonth, foundingDate, noteText, onChange, maxFyStartYear = null, showBadge = true,
 }) {
   const today = todayYearMonth();
   const currentFy = fiscalYearStartOf(today.year, today.month, fyStartMonth);
@@ -38,7 +38,7 @@ export function renderFySelector(container, {
         </select>
         <button class="btn ghost step" data-dir="1" aria-label="翌年度へ" ${canGoNext ? '' : 'disabled'}>›</button>
       </div>
-      ${periodLabel ? `<span class="badge good" style="margin:0">${periodLabel}</span>` : ''}
+      ${showBadge && periodLabel ? `<span class="badge good" style="margin:0">${periodLabel}</span>` : ''}
       ${noteText ? `<span class="card-note" style="margin:0">${noteText}</span>` : ''}
     </div>
   `;

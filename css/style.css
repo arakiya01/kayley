@@ -183,16 +183,49 @@ nav.tabs a.active {
 /* month picker */
 .month-bar {
   display: flex;
-  align-items: flex-start;
-  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
   margin-top: 14px;
   margin-bottom: 0;
   font-size: 14px;
 }
-.month-bar-main {
-  flex: 1;
-  min-width: 0;
+
+.fy-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  background: var(--card-raised);
+  border: 1px solid var(--grid-line);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+  cursor: pointer;
 }
+.fy-toggle:hover { border-color: var(--hanko); }
+.fy-toggle .fy-toggle-caret {
+  font-size: 10px;
+  color: var(--ink-muted);
+  transition: transform 0.18s ease;
+}
+.fy-toggle[aria-expanded="true"] { border-color: var(--hanko); color: var(--hanko); }
+.fy-toggle[aria-expanded="true"] .fy-toggle-caret { transform: rotate(180deg); color: var(--hanko); }
+
+.fy-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease;
+}
+.fy-panel.open { grid-template-rows: 1fr; }
+.fy-panel-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+.fy-panel.open .fy-panel-inner { padding-top: 10px; }
 
 .stepper {
   display: flex;
@@ -281,7 +314,8 @@ nav.tabs a.active {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 4px;
+  flex: 1;
+  min-width: 0;
 }
 .status-strip .pill {
   display: flex;
