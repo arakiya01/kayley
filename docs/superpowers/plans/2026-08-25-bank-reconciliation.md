@@ -1592,6 +1592,37 @@ const TABS = [
 
 `renderProgressSpine()` 内の `steps`（ワークフロータブ＝完了印の付く5科目）には追加しない。銀行タブは締めの5科目に含まれない裏付け専用のタブであり、完了印の対象にしないため、この配列は変更しない。
 
+**重要な補足（セルフレビューで発見した欠落）**: `steps` 配列に追加しないだけだと、銀行タブへの恒常的なナビゲーション導線がヘッダーのどこにも無くなる。現状ヘッダー右上には「設定」への `.utility-link` が1つあるだけで、これでは銀行タブは Task 4/5/6 のバッジ経由でしか辿り着けず、CSVを能動的に取り込みに行く動線が無い。これを避けるため、`renderProgressSpine()` 内の `spine-top-slot` のHTML（既存）:
+
+```js
+  document.getElementById('spine-top-slot').innerHTML = `
+    <div class="spine-top">
+      <div class="wordmark-link">
+        <a href="#/dashboard" class="display">Kayley</a>
+        ${companyName ? `<small>${escapeHtml(companyName)}</small>` : '<small><a href="#/settings">会社名を設定する</a></small>'}
+      </div>
+      <span class="spine-divider"></span>
+      <a class="utility-link ${state.tab === 'settings' ? 'active' : ''}" href="#/settings">設定</a>
+    </div>
+  `;
+```
+
+を次に変更し、「設定」の手前に「銀行」への `.utility-link` を追加する:
+
+```js
+  document.getElementById('spine-top-slot').innerHTML = `
+    <div class="spine-top">
+      <div class="wordmark-link">
+        <a href="#/dashboard" class="display">Kayley</a>
+        ${companyName ? `<small>${escapeHtml(companyName)}</small>` : '<small><a href="#/settings">会社名を設定する</a></small>'}
+      </div>
+      <span class="spine-divider"></span>
+      <a class="utility-link ${state.tab === 'bank' ? 'active' : ''}" href="#/bank">銀行</a>
+      <a class="utility-link ${state.tab === 'settings' ? 'active' : ''}" href="#/settings">設定</a>
+    </div>
+  `;
+```
+
 - [ ] **Step 3: 構文チェック**
 
 Run: `cd /home/lima.guest/projects/kayley && node --check js/views/bank.js && node --check js/app.js`
@@ -1615,7 +1646,7 @@ await page.waitForTimeout(700);
 await page.goto(`${BASE}#/bank`, { waitUntil: 'networkidle' });
 await page.waitForTimeout(500);
 
-const hasTab = await page.evaluate(() => !!document.querySelector('.workflow-step[href="#/bank"]'));
+const hasTab = await page.evaluate(() => !!document.querySelector('.utility-link[href="#/bank"]'));
 console.log('銀行タブがナビに存在する:', hasTab);
 
 // 口座を追加する

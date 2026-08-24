@@ -10,6 +10,7 @@ import * as rent from './views/rent.js';
 import * as officerpay from './views/officerpay.js';
 import * as expenses from './views/expenses.js';
 import * as report from './views/report.js';
+import * as bank from './views/bank.js';
 import * as settings from './views/settings.js';
 import { renderMonthBar } from './views/monthbar.js';
 
@@ -20,6 +21,7 @@ const TABS = [
   { key: 'officer', label: '役員報酬', mod: officerpay, needsMonth: true },
   { key: 'expenses', label: '経費', mod: expenses, needsMonth: true },
   { key: 'report', label: '月次レポート', mod: report, needsMonth: true },
+  { key: 'bank', label: '銀行', mod: bank, needsMonth: false },
   { key: 'settings', label: '設定', mod: settings, needsMonth: false },
 ];
 
@@ -76,6 +78,7 @@ function renderProgressSpine() {
         ${companyName ? `<small>${escapeHtml(companyName)}</small>` : '<small><a href="#/settings">会社名を設定する</a></small>'}
       </div>
       <span class="spine-divider"></span>
+      <a class="utility-link ${state.tab === 'bank' ? 'active' : ''}" href="#/bank">銀行</a>
       <a class="utility-link ${state.tab === 'settings' ? 'active' : ''}" href="#/settings">設定</a>
     </div>
   `;
