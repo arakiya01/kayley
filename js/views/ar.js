@@ -13,6 +13,7 @@ import { lineChart, emptyChart } from '../charts.js';
 import { seriesColor, foldSeriesArrays } from '../colors.js';
 import * as gdrive from '../gdrive.js';
 import { fileChipHtml } from '../fileicon.js';
+import { parseCurrencyInput, enableCurrencyInput } from '../currencyinput.js';
 
 let bulkMode = false;
 let bulkFyStartYear = null;
@@ -79,7 +80,7 @@ export function render(container, ctx) {
         </div>
         <div class="field-row">
           <div class="field-label">開始時点の残高<span class="hint">このアプリで記録を始める時点の未回収残高</span></div>
-          <div class="field-value"><input type="number" id="new-client-balance" value="0"></div>
+          <div class="field-value"><input type="text" inputmode="numeric" class="currency-input" id="new-client-balance" value="0"></div>
         </div>
         <div class="toolbar">
           <span class="spacer"></span>
@@ -87,6 +88,7 @@ export function render(container, ctx) {
         </div>
       </div>
     `;
+    enableCurrencyInput(slot.querySelector('#new-client-balance'));
     slot.querySelector('#save-client-btn').addEventListener('click', () => {
       const name = slot.querySelector('#new-client-name').value.trim();
       if (!name) return;
@@ -94,7 +96,7 @@ export function render(container, ctx) {
         name,
         currency: slot.querySelector('#new-client-currency').value.trim() || 'JPY',
         fx_note: slot.querySelector('#new-client-fx').value.trim(),
-        opening_balance: Number(slot.querySelector('#new-client-balance').value) || 0,
+        opening_balance: parseCurrencyInput(slot.querySelector('#new-client-balance').value),
         opening_year: year,
         opening_month: month,
       });
@@ -154,8 +156,8 @@ export function render(container, ctx) {
             <tr data-client-id="${client.id}">
               <td>${escapeHtml(client.name)}${client.fx_note ? `<div class="card-note" style="margin:0">${escapeHtml(client.fx_note)}</div>` : ''}</td>
               <td class="num">${yen(opening)}</td>
-              <td class="num"><input type="number" class="sales-input" value="${entry.sales || 0}" data-client="${client.id}"></td>
-              <td class="num"><input type="number" class="payment-input" value="${entry.payment || 0}" data-client="${client.id}"></td>
+              <td class="num"><input type="text" inputmode="numeric" class="sales-input currency-input" value="${entry.sales || 0}" data-client="${client.id}"></td>
+              <td class="num"><input type="text" inputmode="numeric" class="payment-input currency-input" value="${entry.payment || 0}" data-client="${client.id}"></td>
               <td class="num closing-cell">${yen(closing)}</td>
               <td>${agingBadge(streak)}</td>
               <td class="no-print invoice-cell" data-client="${client.id}" style="max-width:200px">
@@ -164,6 +166,7 @@ export function render(container, ctx) {
                     ＋請求書
                     <input type="file" class="invoice-file-input" data-client="${client.id}" style="display:none" ${gdriveConfigured ? '' : 'disabled'}>
                   </label>
+                  ${gdriveConfigured ? '' : '<span class="upload-disabled-hint">Google Drive未接続。「設定」タブで接続してください。</span>'}
                   ${invoicesFor(client.id).map((it) => `
                     <span style="display:inline-flex;align-items:center;gap:2px">
                       ${fileChipHtml({ name: it.name, webViewLink: it.web_view_link })}
@@ -191,12 +194,14 @@ export function render(container, ctx) {
       </div>
     `;
 
+    slot.querySelectorAll('.sales-input, .payment-input').forEach(enableCurrencyInput);
+
     slot.querySelectorAll('.sales-input, .payment-input').forEach((input) => {
       input.addEventListener('change', () => {
         const clientId = Number(input.dataset.client);
         const tr = input.closest('tr');
-        const sales = Number(tr.querySelector('.sales-input').value) || 0;
-        const payment = Number(tr.querySelector('.payment-input').value) || 0;
+        const sales = parseCurrencyInput(tr.querySelector('.sales-input').value);
+        const payment = parseCurrencyInput(tr.querySelector('.payment-input').value);
         upsertArEntry({ client_id: clientId, year, month, sales, payment });
         renderTable();
         renderCharts();
@@ -276,8 +281,8 @@ export function render(container, ctx) {
                 ${months.map((m) => {
                   const entry = getArEntry(c.id, m.year, m.month) || { sales: 0, payment: 0 };
                   return `
-                    <td class="num"><input type="number" class="bulk-sales" data-client="${c.id}" data-year="${m.year}" data-month="${m.month}" value="${entry.sales || 0}"></td>
-                    <td class="num"><input type="number" class="bulk-payment" data-client="${c.id}" data-year="${m.year}" data-month="${m.month}" value="${entry.payment || 0}"></td>
+                    <td class="num"><input type="text" inputmode="numeric" class="bulk-sales currency-input" data-client="${c.id}" data-year="${m.year}" data-month="${m.month}" value="${entry.sales || 0}"></td>
+                    <td class="num"><input type="text" inputmode="numeric" class="bulk-payment currency-input" data-client="${c.id}" data-year="${m.year}" data-month="${m.month}" value="${entry.payment || 0}"></td>
                   `;
                 }).join('')}
               </tr>
@@ -299,6 +304,7 @@ export function render(container, ctx) {
     });
 
     enableGridPaste(slot.querySelector('table.bulk-grid'), '.bulk-sales, .bulk-payment');
+    slot.querySelectorAll('.bulk-sales, .bulk-payment').forEach(enableCurrencyInput);
 
     slot.querySelectorAll('.bulk-sales, .bulk-payment').forEach((input) => {
       input.addEventListener('change', () => {
@@ -310,8 +316,8 @@ export function render(container, ctx) {
         const paymentInput = row.querySelector(`.bulk-payment[data-year="${y}"][data-month="${m}"]`);
         upsertArEntry({
           client_id: clientId, year: y, month: m,
-          sales: Number(salesInput.value) || 0,
-          payment: Number(paymentInput.value) || 0,
+          sales: parseCurrencyInput(salesInput.value),
+          payment: parseCurrencyInput(paymentInput.value),
         });
         renderCharts();
       });

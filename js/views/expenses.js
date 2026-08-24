@@ -13,6 +13,7 @@ import { renderMonthBar } from './monthbar.js';
 import * as gdrive from '../gdrive.js';
 import { extractPdfTextRows, detectAndParse } from '../statementparsers.js';
 import { fileChipHtml } from '../fileicon.js';
+import { parseCurrencyInput, enableCurrencyInput } from '../currencyinput.js';
 
 let showAddSourceForm = false;
 const cashFormOpenFor = new Set();
@@ -30,6 +31,12 @@ export function render(container, ctx) {
       <div class="card-note">
         カードの利用明細（PDF）をアップロードすると、1件ずつの取引に自動で展開します。
         現金の利用はまれだと思うので、手入力で追加できます。
+      </div>
+      <div class="card-grid" style="margin-bottom:16px">
+        <div class="stat-tile">
+          <div class="label">当月の経費合計</div>
+          <div class="value num" id="expense-month-total">0<span class="unit">円</span></div>
+        </div>
       </div>
       <div class="toolbar">
         <span class="spacer"></span>
@@ -108,27 +115,49 @@ export function render(container, ctx) {
 
   function renderSources() {
     const slot = container.querySelector('#sources-slot');
-    slot.innerHTML = sources.map((s) => `
+    const sourceRows = sources.map((source) => ({ source, txns: listStatementTransactions(source.id, year, month) }));
+    const populated = sourceRows.filter((row) => row.txns.length > 0);
+    const empty = sourceRows.filter((row) => row.txns.length === 0);
+    const sourceActions = (s) => `
+      ${s.kind === 'card' ? `
+        <label class="btn ghost" style="cursor:pointer">
+          明細をアップロード
+          <input type="file" class="statement-file-input" data-source-id="${s.id}" accept="application/pdf" style="display:none">
+        </label>
+      ` : `<button class="btn ghost add-cash-txn-btn" data-source-id="${s.id}">＋ 明細を追加</button>`}
+      <button class="btn ghost archive-source-btn" data-id="${s.id}">この支払元を休止</button>
+    `;
+    slot.innerHTML = populated.map(({ source: s }) => `
       <div class="card" data-source-id="${s.id}">
         <div class="toolbar">
           <h2 style="margin:0">${escapeHtml(s.name)}</h2>
           <span class="badge good" style="margin-left:8px">${s.kind === 'cash' ? '現金' : 'カード'}</span>
           <span class="spacer"></span>
-          ${s.kind === 'card' ? `
-            <label class="btn ghost" style="cursor:pointer">
-              明細をアップロード
-              <input type="file" class="statement-file-input" data-source-id="${s.id}" accept="application/pdf" style="display:none">
-            </label>
-          ` : `
-            <button class="btn ghost add-cash-txn-btn" data-source-id="${s.id}">＋ 明細を追加</button>
-          `}
-          <button class="btn ghost archive-source-btn" data-id="${s.id}">この支払元を休止</button>
+          ${sourceActions(s)}
         </div>
         <div class="card-note statement-status" data-source-id="${s.id}"></div>
         <div class="cash-txn-form-slot" data-source-id="${s.id}"></div>
         <div id="txn-table-slot-${s.id}"></div>
       </div>
-    `).join('');
+    `).join('') + (empty.length ? `
+      <div class="card compact-sources">
+        <div class="card-note">${monthLabel(year, month)}分の明細がない支払元</div>
+        ${empty.map(({ source: s }) => `
+          <div class="compact-source-row" data-source-id="${s.id}">
+            <strong>${escapeHtml(s.name)}</strong>
+            <span class="badge good">${s.kind === 'cash' ? '現金' : 'カード'}</span>
+            <span class="spacer"></span>
+            ${sourceActions(s)}
+            <div class="statement-status" data-source-id="${s.id}"></div>
+            <div class="cash-txn-form-slot" data-source-id="${s.id}"></div>
+            <div id="txn-table-slot-${s.id}" style="display:none"></div>
+          </div>
+        `).join('')}
+      </div>
+    ` : '');
+
+    const monthTotal = sourceRows.flatMap((row) => row.txns).reduce((sum, txn) => sum + txn.amount, 0);
+    container.querySelector('#expense-month-total').innerHTML = `${yen(monthTotal)}<span class="unit">円</span>`;
 
     sources.forEach((s) => renderTransactionTable(s));
 
@@ -178,7 +207,7 @@ export function render(container, ctx) {
       <div class="field-row">
         <div class="field-label">金額</div>
         <div class="field-value">
-          <input type="number" id="cash-amount-${sourceId}" value="0">
+          <input type="text" inputmode="numeric" class="currency-input" id="cash-amount-${sourceId}" value="0">
           <span class="field-suffix">円</span>
         </div>
       </div>
@@ -187,17 +216,17 @@ export function render(container, ctx) {
         <button class="btn primary" id="save-cash-${sourceId}">追加する</button>
       </div>
     `;
+    enableCurrencyInput(formSlot.querySelector(`#cash-amount-${sourceId}`));
     formSlot.querySelector(`#save-cash-${sourceId}`).addEventListener('click', () => {
       const dateVal = formSlot.querySelector(`#cash-date-${sourceId}`).value;
       const desc = formSlot.querySelector(`#cash-desc-${sourceId}`).value.trim();
-      const amount = Number(formSlot.querySelector(`#cash-amount-${sourceId}`).value) || 0;
+      const amount = parseCurrencyInput(formSlot.querySelector(`#cash-amount-${sourceId}`).value);
       if (!desc) return;
       addStatementTransaction({
         source_id: sourceId, year, month, txn_date: dateVal || null, description: desc, amount,
       });
       cashFormOpenFor.delete(sourceId);
-      renderTransactionTable(sources.find((s) => s.id === sourceId));
-      renderCashForm(sourceId);
+      renderSources();
     });
   }
 
@@ -241,7 +270,7 @@ export function render(container, ctx) {
     }
 
     statusEl.textContent = note;
-    renderTransactionTable(source);
+    renderSources();
   }
 
   function renderTransactionTable(source) {
@@ -269,7 +298,7 @@ export function render(container, ctx) {
             ${txns.map((t) => `
               <tr data-txn-id="${t.id}">
                 <td>${escapeHtml(t.txn_date || '—')}</td>
-                <td>${escapeHtml(t.description)}</td>
+                <td class="desc">${escapeHtml(t.description)}</td>
                 <td class="num">${yen(t.amount)}</td>
                 <td class="no-print receipt-cell" data-txn-id="${t.id}" style="max-width:200px">
                   <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
@@ -277,6 +306,7 @@ export function render(container, ctx) {
                       ＋領収書
                       <input type="file" class="txn-receipt-input" data-txn-id="${t.id}" style="display:none" ${gdriveConfigured2 ? '' : 'disabled'}>
                     </label>
+                    ${gdriveConfigured2 ? '' : '<span class="upload-disabled-hint">Google Drive未接続。「設定」タブで接続してください。</span>'}
                     ${receiptsFor(t.id).map((it) => `
                       <span style="display:inline-flex;align-items:center;gap:2px">
                         ${fileChipHtml({ name: it.name, webViewLink: it.web_view_link })}
@@ -301,7 +331,7 @@ export function render(container, ctx) {
       btn.addEventListener('click', () => {
         if (!confirm('この明細行を削除します。よろしいですか？')) return;
         removeStatementTransaction(Number(btn.dataset.id));
-        renderTransactionTable(source);
+        renderSources();
       });
     });
 

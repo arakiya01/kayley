@@ -1,7 +1,7 @@
 import {
   listClientsForMonth, listClientsForMonths, computeArLedger, getRentUtilityEntry, computeUtilityPersonalTotal,
   getOfficerPayEntry, resolveOfficerDeductions, getMeta, getMonthStatus, prevMonth,
-  listAttachments, removeAttachment, getClient,
+  listAttachments, removeAttachment, getClient, listExpenseSourceSummaries,
 } from '../db.js';
 import {
   yen, monthLabel, escapeHtml, fiscalYearStartOf, fiscalYearMonths,
@@ -81,6 +81,23 @@ export function render(container, ctx) {
     statutoryFy += (e.health_insurance || 0) + (e.nursing_care_insurance || 0) + (e.pension || 0) + (e.child_support_levy || 0);
   });
 
+  const expenseSummaries = listExpenseSourceSummaries(monthsToDate);
+  const expenseThisMonth = expenseSummaries
+    .filter((r) => r.year === year && r.month === month)
+    .reduce((sum, r) => sum + r.total, 0);
+  const expenseFy = expenseSummaries.reduce((sum, r) => sum + r.total, 0);
+  const expenseSources = Array.from(new Map(expenseSummaries.map((r) => [r.id, r])).values()).map((source) => {
+    const rows = expenseSummaries.filter((r) => r.id === source.id);
+    const currentRows = rows.filter((r) => r.year === year && r.month === month);
+    return {
+      ...source,
+      monthTotal: currentRows.reduce((sum, r) => sum + r.total, 0),
+      monthCount: currentRows.reduce((sum, r) => sum + r.transaction_count, 0),
+      fyTotal: rows.reduce((sum, r) => sum + r.total, 0),
+      fyCount: rows.reduce((sum, r) => sum + r.transaction_count, 0),
+    };
+  });
+
   const rentThisMonth = rentEntry ? rentEntry.rent_total : 0;
   let rentFy = 0;
   monthsToDate.forEach((m) => {
@@ -108,7 +125,7 @@ export function render(container, ctx) {
     <div class="card">
       <h2>科目別集計</h2>
       <div class="card-note no-print">この一覧はKayleyに記録されている金額から自動集計しています（税理士さんへの確認用）。</div>
-      <div class="card-note">※交際費・通信費・保険料など、一部の科目は含まれていません。</div>
+      <div class="card-note">※経費は科目の振り分けを行わず、支払元ごとの合計と明細件数を記載しています。</div>
       <table class="ledger">
         <thead>
           <tr><th>勘定科目</th><th class="num">${monthLabel(year, month)}</th><th class="num">今期累計</th></tr>
@@ -118,6 +135,10 @@ export function render(container, ctx) {
           <tr><td>役員報酬</td><td class="num">${yen(payEntry ? payEntry.gross_pay : 0)}</td><td class="num">${yen(officerFy)}</td></tr>
           <tr><td>法定福利費</td><td class="num">${yen(statutoryThisMonth)}</td><td class="num">${yen(statutoryFy)}</td></tr>
           <tr><td>地代家賃</td><td class="num">${yen(rentThisMonth)}</td><td class="num">${yen(rentFy)}</td></tr>
+          <tr class="expense-group"><td>経費（カード・現金）</td><td class="num">${yen(expenseThisMonth)}</td><td class="num">${yen(expenseFy)}</td></tr>
+          ${expenseSources.map((source) => `
+            <tr class="expense-source"><td>${escapeHtml(source.name)}・${source.monthCount}件</td><td class="num">${yen(source.monthTotal)}</td><td class="num">${yen(source.fyTotal)}</td></tr>
+          `).join('')}
           <tr><td>売掛金残高（月末時点）</td><td class="num">${yen(arClosingTotal)}</td><td class="num">—</td></tr>
         </tbody>
       </table>

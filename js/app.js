@@ -1,5 +1,8 @@
-import { openDatabase, getMeta, getFoundingDate, exportBytes } from './db.js';
-import { todayYearMonth } from './format.js';
+import {
+  openDatabase, getMeta, getFoundingDate, exportBytes, listArEntriesForMonth,
+  getRentUtilityEntry, getOfficerPayEntry, listExpenseSourceSummaries, listAttachments,
+} from './db.js';
+import { todayYearMonth, escapeHtml } from './format.js';
 import { applyTheme } from './theme.js';
 import * as gdrive from './gdrive.js';
 import * as dashboard from './views/dashboard.js';
@@ -44,19 +47,37 @@ function currentTabFromHash() {
 
 function renderShell() {
   const root = document.getElementById('app-shell');
-  const companyName = getMeta('company_name') || '';
   root.innerHTML = `
-    <div class="masthead">
-      <div class="wordmark">
-        <h1 class="display">Kayley</h1>
-        <div class="sub">SOLO BOOKKEEPING</div>
-      </div>
-      <div class="company">${companyName ? companyName : '<a href="#/settings">会社名を設定する</a>'}</div>
-    </div>
-    <nav class="tabs">
-      ${TABS.map((t) => `<a href="#/${t.key}" data-key="${t.key}">${t.label}</a>`).join('')}
-    </nav>
+    <header class="progress-spine" id="progress-spine"></header>
     <div id="view-root"></div>
+  `;
+}
+
+function renderProgressSpine() {
+  const companyName = getMeta('company_name') || '';
+  const attachments = listAttachments(state.year, state.month);
+  const expenseRows = listExpenseSourceSummaries([{ year: state.year, month: state.month }]);
+  const steps = [
+    { key: 'ar', label: '売掛金', done: listArEntriesForMonth(state.year, state.month).length > 0 },
+    { key: 'rent', label: '家賃・光熱費', done: !!getRentUtilityEntry(state.year, state.month) },
+    { key: 'officer', label: '役員報酬', done: !!getOfficerPayEntry(state.year, state.month) },
+    { key: 'expenses', label: '経費', done: expenseRows.length > 0 || attachments.some((a) => a.category !== 'invoice' && a.category !== 'statement') },
+  ];
+  const remaining = steps.filter((step) => !step.done).length;
+  document.getElementById('progress-spine').innerHTML = `
+    <div class="spine-top">
+      <a class="wordmark-link" href="#/dashboard"><span class="display">Kayley</span><small>SOLO BOOKKEEPING</small></a>
+      <span class="spine-company">${companyName ? escapeHtml(companyName) : '<a href="#/settings">会社名を設定する</a>'}</span>
+      <span class="spine-divider"></span>
+      <a class="utility-link ${state.tab === 'dashboard' ? 'active' : ''}" href="#/dashboard">概況</a>
+      <a class="utility-link ${state.tab === 'settings' ? 'active' : ''}" href="#/settings">設定</a>
+    </div>
+    <nav class="workflow-tabs">
+      ${steps.map((step) => `<a href="#/${step.key}" class="workflow-step ${state.tab === step.key ? 'active' : ''}"><span class="completion-seal ${step.done ? 'done' : ''}"></span>${step.label}</a>`).join('')}
+      ${remaining > 0 ? `<span class="workflow-hint">あと${remaining}つで締められます</span>` : ''}
+      <span class="workflow-spacer"></span>
+      <a class="report-link ${state.tab === 'report' ? 'active' : ''}" href="#/report">レポートを渡す</a>
+    </nav>
   `;
 }
 
@@ -74,9 +95,7 @@ function renderView() {
   clampToFoundingDate();
   saveUiState(state);
 
-  document.querySelectorAll('nav.tabs a').forEach((a) => {
-    a.classList.toggle('active', a.dataset.key === state.tab);
-  });
+  renderProgressSpine();
 
   const tab = TABS.find((t) => t.key === state.tab);
   const viewRoot = document.getElementById('view-root');

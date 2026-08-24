@@ -7,6 +7,7 @@ import { renderFySelector } from './fyselector.js';
 import { enableGridPaste } from './gridpaste.js';
 import { lineChart, donutChart } from '../charts.js';
 import { seriesColor } from '../colors.js';
+import { parseCurrencyInput, enableCurrencyInput } from '../currencyinput.js';
 
 const DEDUCTION_FIELDS = [
   { key: 'health_insurance', label: '健康保険' },
@@ -36,78 +37,35 @@ export function render(container, ctx) {
     </div>
     <div id="bulk-slot"></div>
     <div id="single-month-slot" style="${bulkMode ? 'display:none' : ''}">
-      <div class="card">
-        <h2>役員報酬</h2>
-        <div class="field-row">
-          <div class="field-label">支給額</div>
-          <div class="field-value">
-            <input type="number" id="gross_pay" step="1">
-            <span class="field-suffix">円</span>
-          </div>
-        </div>
-        <div class="toolbar">
-          <span class="spacer"></span>
-          <button class="btn ghost" id="copy-prev-btn">前月の保険料等をコピー</button>
-        </div>
-        ${DEDUCTION_FIELDS.map((f) => `
-          <div class="field-row">
-            <div class="field-label">${f.label}</div>
-            <div class="field-value">
-              <input type="number" id="${f.key}" step="1">
-              <span class="field-suffix">円</span>
+      <div class="card payslip">
+        <div class="payslip-header"><h2>役員報酬明細</h2><span>${monthLabel(year, month)}</span></div>
+        <div class="payslip-grid">
+          <section>
+            <div class="section-heading">支給</div>
+            <div class="compact-field"><label for="gross_pay">支給額</label><span><input type="text" inputmode="numeric" class="currency-input" id="gross_pay"><small>円</small></span></div>
+            <button class="btn ghost" id="copy-prev-btn">前月の保険料等をコピー</button>
+            <div class="section-heading payslip-balance-heading">差引</div>
+            <div class="computed-line"><span>控除合計</span><strong class="num" id="deduction-total">0<span class="unit">円</span></strong></div>
+            <div class="net-pay-line"><span>差引支給額</span><strong class="num" id="net-pay">0<span class="unit">円</span></strong></div>
+          </section>
+          <section>
+            <div class="section-heading">控除</div>
+            ${DEDUCTION_FIELDS.map((f) => `
+              <div class="compact-field"><label for="${f.key}">${f.label}</label><span><input type="text" inputmode="numeric" class="currency-input" id="${f.key}"><small>円</small></span></div>
+            `).join('')}
+            <label class="auto-toggle"><input type="checkbox" id="use_auto"> 家賃・光熱費の自動反映を使う</label>
+            <div class="card-note payslip-note">${deductions.has_source
+              ? `${monthLabel(prev.year, prev.month)}分の台帳から自動反映しています。`
+              : `${monthLabel(prev.year, prev.month)}分の台帳データがないため0円です。`}</div>
+            <div id="manual-fields" style="display:none">
+              <div class="compact-field"><label for="manual_rent_deduction">家賃控除（手入力）</label><span><input type="text" inputmode="numeric" class="currency-input" id="manual_rent_deduction"><small>円</small></span></div>
+              <div class="compact-field"><label for="manual_utility_deduction">光熱費控除（手入力）</label><span><input type="text" inputmode="numeric" class="currency-input" id="manual_utility_deduction"><small>円</small></span></div>
             </div>
-          </div>
-        `).join('')}
-      </div>
-      <div class="card">
-        <h2>家賃・光熱費控除</h2>
-        <div class="card-note">
-          ${deductions.has_source
-            ? `${monthLabel(prev.year, prev.month)}分の家賃・光熱費台帳から自動反映しています（実績確定が翌月扱いのため）。`
-            : `${monthLabel(prev.year, prev.month)}分の家賃・光熱費データがまだ無いため、0円で計算しています。「家賃光熱費」タブで前月分を入力すると自動反映されます。`}
-        </div>
-        <div class="field-row">
-          <div class="field-label">自動反映を使う</div>
-          <div class="field-value"><input type="checkbox" id="use_auto" style="width:auto"></div>
-        </div>
-        <div id="manual-fields" style="display:none">
-          <div class="field-row">
-            <div class="field-label">家賃控除（手入力）</div>
-            <div class="field-value">
-              <input type="number" id="manual_rent_deduction" step="1">
-              <span class="field-suffix">円</span>
+            <div class="auto-deductions">
+              <div class="computed-line"><span>家賃控除</span><strong class="num" id="rent-deduction-display">0<span class="unit">円</span></strong></div>
+              <div class="computed-line"><span>水道光熱費控除</span><strong class="num" id="utility-deduction-display">0<span class="unit">円</span></strong></div>
             </div>
-          </div>
-          <div class="field-row">
-            <div class="field-label">水道光熱費控除（手入力）</div>
-            <div class="field-value">
-              <input type="number" id="manual_utility_deduction" step="1">
-              <span class="field-suffix">円</span>
-            </div>
-          </div>
-        </div>
-        <div class="card-grid" style="margin-top:14px">
-          <div class="stat-tile">
-            <div class="label">家賃控除</div>
-            <div class="value num" id="rent-deduction-display">0<span class="unit">円</span></div>
-          </div>
-          <div class="stat-tile">
-            <div class="label">水道光熱費控除</div>
-            <div class="value num" id="utility-deduction-display">0<span class="unit">円</span></div>
-          </div>
-        </div>
-      </div>
-      <div class="card">
-        <h2>差引支給額</h2>
-        <div class="card-grid">
-          <div class="stat-tile">
-            <div class="label">控除合計</div>
-            <div class="value num" id="deduction-total">0<span class="unit">円</span></div>
-          </div>
-          <div class="stat-tile">
-            <div class="label">差引支給額</div>
-            <div class="value num" id="net-pay">0<span class="unit">円</span></div>
-          </div>
+          </section>
         </div>
       </div>
       <div class="card">
@@ -150,17 +108,18 @@ export function render(container, ctx) {
   container.querySelector('#manual_rent_deduction').value = state.manual_rent_deduction;
   container.querySelector('#manual_utility_deduction').value = state.manual_utility_deduction;
   container.querySelector('#manual-fields').style.display = state.use_auto_deduction ? 'none' : 'block';
+  container.querySelectorAll('#single-month-slot input.currency-input').forEach(enableCurrencyInput);
 
   function save() {
     const useAuto = container.querySelector('#use_auto').checked;
     const entry = {
       year, month,
-      gross_pay: Number(container.querySelector('#gross_pay').value) || 0,
+      gross_pay: parseCurrencyInput(container.querySelector('#gross_pay').value),
       use_auto_deduction: useAuto,
-      manual_rent_deduction: Number(container.querySelector('#manual_rent_deduction').value) || 0,
-      manual_utility_deduction: Number(container.querySelector('#manual_utility_deduction').value) || 0,
+      manual_rent_deduction: parseCurrencyInput(container.querySelector('#manual_rent_deduction').value),
+      manual_utility_deduction: parseCurrencyInput(container.querySelector('#manual_utility_deduction').value),
     };
-    DEDUCTION_FIELDS.forEach((f) => { entry[f.key] = Number(container.querySelector(`#${f.key}`).value) || 0; });
+    DEDUCTION_FIELDS.forEach((f) => { entry[f.key] = parseCurrencyInput(container.querySelector(`#${f.key}`).value); });
     upsertOfficerPayEntry(entry);
     container.querySelector('#manual-fields').style.display = useAuto ? 'none' : 'block';
     recompute(entry);
@@ -254,7 +213,7 @@ export function render(container, ctx) {
                   ${months.map((m) => {
                     const entry = getOfficerPayEntry(m.year, m.month);
                     const value = entry ? entry[f.key] : 0;
-                    return `<td class="num"><input type="number" class="bulk-pay-input" data-key="${f.key}" data-year="${m.year}" data-month="${m.month}" value="${value}"></td>`;
+                    return `<td class="num"><input type="text" inputmode="numeric" class="bulk-pay-input currency-input" data-key="${f.key}" data-year="${m.year}" data-month="${m.month}" value="${value}"></td>`;
                   }).join('')}
                 </tr>
               `).join('')}
@@ -276,6 +235,7 @@ export function render(container, ctx) {
     });
 
     enableGridPaste(slot.querySelector('table.bulk-grid'), '.bulk-pay-input');
+    slot.querySelectorAll('.bulk-pay-input').forEach(enableCurrencyInput);
 
     slot.querySelectorAll('.bulk-pay-input').forEach((input) => {
       input.addEventListener('change', () => {
@@ -286,7 +246,7 @@ export function render(container, ctx) {
           child_support_levy: 0, withholding_tax: 0, use_auto_deduction: 1,
           manual_rent_deduction: 0, manual_utility_deduction: 0,
         };
-        const updated = { ...existingEntry, year: y, month: m, [input.dataset.key]: Number(input.value) || 0 };
+        const updated = { ...existingEntry, year: y, month: m, [input.dataset.key]: parseCurrencyInput(input.value) };
         upsertOfficerPayEntry(updated);
         renderChart();
       });

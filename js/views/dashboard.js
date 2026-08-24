@@ -1,7 +1,7 @@
 import {
   listClientsForMonths, computeArLedger, unpaidStreak, getRentUtilityEntry, computeUtilityPersonalTotal,
   getOfficerPayEntry, resolveOfficerDeductions, getMeta, getMonthStatus, getFoundingDate,
-  isMonthAllowed, listAttachments,
+  listAttachments, listArEntriesForMonth, listExpenseSourceSummaries, setMonthFinalized,
 } from '../db.js';
 import {
   yen, yenSigned, monthLabel, escapeHtml, addMonths, todayYearMonth,
@@ -63,7 +63,6 @@ export function render(container, ctx) {
   const months = fiscalYearMonths(fyStartYear, fyStartMonth);
   const highlightIndex = months.findIndex((m) => m.year === year && m.month === month);
   const clients = listClientsForMonths(months);
-  const companyName = getMeta('company_name') || '(会社名未設定)';
   const periodHeading = fiscalPeriodHeading(year, month, fyStartMonth, getFoundingDate());
   const today = todayYearMonth();
 
@@ -88,71 +87,50 @@ export function render(container, ctx) {
   const agingTotal = aging.reduce((a, x) => a + x.balance, 0);
 
   const todayIdx = today.year * 12 + today.month;
-  const unfinalizedCount = months.filter((m) => {
-    if (!isMonthAllowed(m.year, m.month)) return false;
-    if (m.year * 12 + m.month > todayIdx) return false;
-    const st = getMonthStatus(m.year, m.month);
-    return !(st && st.finalized);
-  }).length;
-
   const monthAttachments = listAttachments(year, month);
   const invoiceCount = monthAttachments.filter((a) => a.category === 'invoice').length;
   const receiptCount = monthAttachments.filter((a) => a.category !== 'invoice').length;
+  const arEntries = listArEntriesForMonth(year, month);
+  const expenseRows = listExpenseSourceSummaries([{ year, month }]);
+  const expenseTxnCount = expenseRows.reduce((sum, row) => sum + row.transaction_count, 0);
+  const expenseReceiptCount = monthAttachments.filter((a) => a.category !== 'invoice' && a.category !== 'statement').length;
+  const sections = [
+    { name: '売掛金', tab: 'ar', done: arEntries.length > 0, value: `${arEntries.length}件 / ${yen(thisMonth.sales)}円` },
+    { name: '家賃・光熱費', tab: 'rent', done: !!rentEntry, value: `個人負担 ${personalBurden == null ? '—' : `${yen(personalBurden)}円`}` },
+    { name: '役員報酬', tab: 'officer', done: netPay != null, value: `差引 ${netPay == null ? '—' : `${yen(netPay)}円`}` },
+    { name: '経費', tab: 'expenses', done: expenseTxnCount > 0 || expenseReceiptCount > 0, value: `明細${expenseTxnCount}件 ・ 領収書${expenseReceiptCount}件` },
+  ];
+  const incomplete = sections.filter((section) => !section.done);
+  const nextSection = incomplete[0];
 
   container.innerHTML = `
     <div id="month-bar-slot"></div>
-    <div class="card">
-      <h2>${escapeHtml(companyName)}</h2>
-      <div class="card-note">${monthLabel(year, month)} 時点のスナップショット・${periodHeading}</div>
-      <div class="card-grid">
-        <div class="stat-tile">
-          <div class="label">当月売上</div>
-          <div class="value num">${yen(thisMonth.sales)}<span class="unit">円</span></div>
-          ${deltaHtml(thisMonth.sales - prevMonthData.sales)}
-        </div>
-        <div class="stat-tile">
-          <div class="label">当月入金</div>
-          <div class="value num">${yen(thisMonth.payment)}<span class="unit">円</span></div>
-          ${deltaHtml(thisMonth.payment - prevMonthData.payment)}
-        </div>
-        <div class="stat-tile">
-          <div class="label">売掛金残高合計</div>
-          <div class="value num">${yen(thisMonth.balance)}<span class="unit">円</span></div>
-          <div class="delta" style="color:var(--ink-muted)">前月末比 ${yenSigned(thisMonth.balance - prevMonthData.balance)}円</div>
-        </div>
-        <div class="stat-tile">
-          <div class="label">今期の売上累計</div>
-          <div class="value num">${yen(fySalesSum)}<span class="unit">円</span></div>
-          <div class="delta" style="color:var(--ink-muted)">入金累計 ${yen(fyPaymentSum)}円</div>
-        </div>
-        <div class="stat-tile">
-          <div class="label">家賃・光熱費 個人負担（当月）</div>
-          <div class="value num">${personalBurden == null ? '—' : yen(personalBurden)}<span class="unit">円</span></div>
-        </div>
-        <div class="stat-tile">
-          <div class="label">役員報酬 差引支給額（当月）</div>
-          <div class="value num">${netPay == null ? '—' : yen(netPay)}<span class="unit">円</span></div>
-        </div>
-        <div class="stat-tile">
-          <div class="label">滞留中の売掛金</div>
-          <div class="value num">${yen(agingTotal)}<span class="unit">円（${aging.length}件）</span></div>
-          ${aging.length === 0
-            ? `<div class="delta up">滞留なし</div>`
-            : `<div class="delta down">要確認</div>`}
-        </div>
-        <div class="stat-tile">
-          <div class="label">今期の未確定月数</div>
-          <div class="value num">${unfinalizedCount}<span class="unit">ヶ月</span></div>
-          ${unfinalizedCount === 0
-            ? `<div class="delta up">今期は全て確定済み</div>`
-            : `<div class="delta down">確定作業が必要です</div>`}
-        </div>
+    <div class="card closing-panel">
+      <div class="closing-grid">
+        <section>
+          <div class="closing-month">${monthLabel(year, month)}</div>
+          <div class="closing-status">${status && status.finalized ? '確定済み' : `未確定 ・ 残り${incomplete.length}項目`}</div>
+          <div class="closing-checklist">
+            ${sections.map((section) => `
+              <div class="closing-row"><span class="completion-seal ${section.done ? 'done' : ''}"></span><span>${section.name}</span><strong class="num">${section.value}</strong></div>
+            `).join('')}
+          </div>
+          <div class="closing-actions">
+            ${status && status.finalized
+              ? '<span class="badge good">この月は確定済みです</span>'
+              : `${nextSection ? `<a class="btn primary" href="#/${nextSection.tab}">${nextSection.name}の入力を続ける</a>` : ''}<button class="btn ghost" id="dashboard-finalize-btn">この月を確定する</button>`}
+          </div>
+        </section>
+        <section class="closing-figures">
+          <div class="stat-tile lead-figure"><div class="label">当月売上</div><div class="value num">${yen(thisMonth.sales)}<span class="unit">円</span></div>${deltaHtml(thisMonth.sales - prevMonthData.sales)}</div>
+          <div class="closing-figure-pair">
+            <div class="stat-tile"><div class="label">当月入金</div><div class="value num">${yen(thisMonth.payment)}<span class="unit">円</span></div></div>
+            <div class="stat-tile"><div class="label">売掛金残高合計</div><div class="value num">${yen(thisMonth.balance)}<span class="unit">円</span></div></div>
+          </div>
+          <div class="stat-tile"><div class="label">今期の売上累計</div><div class="value num">${yen(fySalesSum)}<span class="unit">円</span></div><div class="delta">入金累計 ${yen(fyPaymentSum)}円</div></div>
+        </section>
       </div>
-      <div style="margin-top:16px">
-        ${status && status.finalized
-          ? `<span class="badge good">この月は確定済みです</span>`
-          : `<span class="badge warning">この月は未確定です</span>`}
-      </div>
+      ${aging.length > 0 ? `<div class="aging-strip"><span class="badge ${aging.some((a) => a.streak >= 3) ? 'critical' : 'warning'}">滞留中の売掛金 ${aging.length}件</span><strong class="num">${yen(agingTotal)}円</strong></div>` : ''}
     </div>
 
     <div class="two-col">
@@ -213,6 +191,11 @@ export function render(container, ctx) {
 
   renderMonthBar(container.querySelector('#month-bar-slot'), {
     year, month, onChange: ctx.setMonth, showFinalize: false,
+  });
+  const finalizeBtn = container.querySelector('#dashboard-finalize-btn');
+  if (finalizeBtn) finalizeBtn.addEventListener('click', () => {
+    setMonthFinalized(year, month, true);
+    ctx.setMonth(year, month);
   });
 
   const xLabels = months.map((m) => `${m.month}月`);

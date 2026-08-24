@@ -7,6 +7,7 @@ import { renderFySelector } from './fyselector.js';
 import { enableGridPaste } from './gridpaste.js';
 import { lineChart } from '../charts.js';
 import { seriesColor } from '../colors.js';
+import { parseCurrencyInput, enableCurrencyInput } from '../currencyinput.js';
 
 const FIELDS = [
   { key: 'water', label: '水道', totalKey: 'water_total', pctKey: 'water_personal_pct' },
@@ -41,32 +42,35 @@ export function render(container, ctx) {
       <button class="btn ghost" id="bulk-toggle-btn">${bulkMode ? '月次入力に戻る' : '📋 一括入力（年度）'}</button>
     </div>
     <div id="single-month-slot" style="${bulkMode ? 'display:none' : ''}">
-      <div class="card">
+      <div class="rent-document-grid">
+      <div class="card rent-card">
         <h2>家賃</h2>
         <div class="card-note">全体の家賃実額と、個人負担分（固定額）を入力します。</div>
+        <div class="rent-fields-grid">
         <div class="field-row">
           <div class="field-label">家賃（全体・実額）</div>
           <div class="field-value">
-            <input type="number" id="rent_total" step="1">
+            <input type="text" inputmode="numeric" class="currency-input" id="rent_total">
             <span class="field-suffix">円</span>
           </div>
         </div>
         <div class="field-row">
           <div class="field-label">家賃（個人負担・固定）<span class="hint">按分契約上の固定額</span></div>
           <div class="field-value">
-            <input type="number" id="rent_personal_fixed" step="1">
+            <input type="text" inputmode="numeric" class="currency-input" id="rent_personal_fixed">
             <span class="field-suffix">円</span>
           </div>
         </div>
+        </div>
       </div>
-      <div class="card">
+      <div class="card utility-card">
         <h2>光熱費</h2>
         <div class="card-note">全体の請求額と、個人負担割合（％）から個人負担額を自動計算します。</div>
         ${FIELDS.map((f) => `
           <div class="field-row">
             <div class="field-label">${f.label}（全体）</div>
             <div class="field-value">
-              <input type="number" id="${f.totalKey}" step="1">
+              <input type="text" inputmode="numeric" class="currency-input" id="${f.totalKey}">
               <span class="field-suffix">円</span>
               <input type="number" id="${f.pctKey}" step="1" style="flex:0 1 70px">
               <span class="field-suffix">％負担 → <span class="num" id="${f.key}-personal">0</span>円</span>
@@ -74,7 +78,7 @@ export function render(container, ctx) {
           </div>
         `).join('')}
       </div>
-      <div class="card">
+      <div class="card rent-summary-card">
         <h2>当月の個人負担まとめ</h2>
         <div class="card-note">この金額は、翌月の役員報酬明細で自動的に控除項目として反映されます（実績確定が翌月になるため）。</div>
         <div class="card-grid">
@@ -87,6 +91,7 @@ export function render(container, ctx) {
             <div class="value num" id="grand-personal-total">0<span class="unit">円</span></div>
           </div>
         </div>
+      </div>
       </div>
     </div>
     <div id="bulk-slot"></div>
@@ -131,15 +136,16 @@ export function render(container, ctx) {
     container.querySelector(`#${f.totalKey}`).value = state[f.totalKey];
     container.querySelector(`#${f.pctKey}`).value = state[f.pctKey];
   });
+  container.querySelectorAll('#rent_total, #rent_personal_fixed, input[id$="_total"]').forEach(enableCurrencyInput);
 
   function recomputeAndSave() {
     const entry = {
       year, month,
-      rent_total: Number(container.querySelector('#rent_total').value) || 0,
-      rent_personal_fixed: Number(container.querySelector('#rent_personal_fixed').value) || 0,
+      rent_total: parseCurrencyInput(container.querySelector('#rent_total').value),
+      rent_personal_fixed: parseCurrencyInput(container.querySelector('#rent_personal_fixed').value),
     };
     FIELDS.forEach((f) => {
-      entry[f.totalKey] = Number(container.querySelector(`#${f.totalKey}`).value) || 0;
+      entry[f.totalKey] = parseCurrencyInput(container.querySelector(`#${f.totalKey}`).value);
       entry[f.pctKey] = Number(container.querySelector(`#${f.pctKey}`).value) || 0;
     });
     upsertRentUtilityEntry(entry);
@@ -225,7 +231,7 @@ export function render(container, ctx) {
                     const entry = getRentUtilityEntry(m.year, m.month);
                     const isPct = row.key.endsWith('_personal_pct');
                     const value = entry ? entry[row.key] : (isPct ? defaultPct : 0);
-                    return `<td class="num"><input type="number" class="bulk-rent-input" data-key="${row.key}" data-year="${m.year}" data-month="${m.month}" value="${value}"></td>`;
+                    return `<td class="num"><input type="${isPct ? 'number' : 'text'}" ${isPct ? '' : 'inputmode="numeric"'} class="bulk-rent-input${isPct ? '' : ' currency-input'}" data-key="${row.key}" data-year="${m.year}" data-month="${m.month}" value="${value}"></td>`;
                   }).join('')}
                 </tr>
               `).join('')}
@@ -247,6 +253,7 @@ export function render(container, ctx) {
     });
 
     enableGridPaste(slot.querySelector('table.bulk-grid'), '.bulk-rent-input');
+    slot.querySelectorAll('.bulk-rent-input.currency-input').forEach(enableCurrencyInput);
 
     slot.querySelectorAll('.bulk-rent-input').forEach((input) => {
       input.addEventListener('change', () => {
@@ -258,7 +265,8 @@ export function render(container, ctx) {
           gas_total: 0, gas_personal_pct: defaultPct,
           electricity_total: 0, electricity_personal_pct: defaultPct,
         };
-        const updated = { ...existingEntry, year: y, month: m, [input.dataset.key]: Number(input.value) || 0 };
+        const value = input.dataset.key.endsWith('_personal_pct') ? Number(input.value) || 0 : parseCurrencyInput(input.value);
+        const updated = { ...existingEntry, year: y, month: m, [input.dataset.key]: value };
         upsertRentUtilityEntry(updated);
         renderChart();
       });

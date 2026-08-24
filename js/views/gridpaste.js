@@ -1,3 +1,5 @@
+import { formatCurrencyInput } from '../currencyinput.js';
+
 // Excel/Googleスプレッドシートから範囲コピーした内容を、貼り付け先のセルを起点に
 // 行・列方向へそのまま流し込む（スプレッドシートの範囲貼り付けと同じ挙動）。
 export function enableGridPaste(tableEl, inputSelector) {
@@ -26,7 +28,7 @@ export function enableGridPaste(tableEl, inputSelector) {
         const input = inputs[startColIdx + c];
         if (!input) return;
         const cleaned = cellText.trim().replace(/[,¥\s]/g, '');
-        input.value = cleaned === '' ? '' : (Number.isFinite(Number(cleaned)) ? Number(cleaned) : cellText.trim());
+        input.value = cleaned === '' ? '' : (Number.isFinite(Number(cleaned)) ? formatCurrencyInput(cleaned) : cellText.trim());
         input.dispatchEvent(new Event('change', { bubbles: true }));
       });
     });

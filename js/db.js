@@ -382,6 +382,22 @@ export function listStatementTransactions(sourceId, year, month) {
   );
 }
 
+export function listExpenseSourceSummaries(months) {
+  if (months.length === 0) return [];
+  const conditions = months.map(() => '(t.year=? AND t.month=?)').join(' OR ');
+  const params = months.flatMap((m) => [m.year, m.month]);
+  return all(
+    `SELECT p.id, p.name, p.kind, t.year, t.month,
+            COUNT(t.id) AS transaction_count, COALESCE(SUM(t.amount), 0) AS total
+     FROM payment_sources p
+     JOIN statement_transactions t ON t.source_id = p.id
+     WHERE ${conditions}
+     GROUP BY p.id, p.name, p.kind, t.year, t.month
+     ORDER BY p.sort_order, p.id, t.year, t.month`,
+    params
+  );
+}
+
 export function addStatementTransaction({ source_id, year, month, txn_date, description, amount, note }) {
   run(
     `INSERT INTO statement_transactions (source_id, year, month, txn_date, description, amount, note)

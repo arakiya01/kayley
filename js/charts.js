@@ -339,6 +339,9 @@ export function donutChart(container, opts) {
   });
 
   const centerDiv = document.createElement('div');
+  const centerText = yFormat(centerValue);
+  const holeDiameter = 2 * (r - thickness / 2);
+  const centerFontSize = Math.max(12, Math.min(22, holeDiameter / Math.max(4, centerText.length * 0.62)));
   centerDiv.style.position = 'absolute';
   centerDiv.style.inset = '0';
   centerDiv.style.display = 'flex';
@@ -348,7 +351,7 @@ export function donutChart(container, opts) {
   centerDiv.style.textAlign = 'center';
   centerDiv.innerHTML = `
     <div style="font-size:11px;color:var(--ink-muted);margin-bottom:4px">${centerLabel}</div>
-    <div class="num" style="font-size:22px;font-weight:700;color:var(--ink)">${yFormat(centerValue)}</div>
+    <div class="num" style="font-size:${centerFontSize}px;font-weight:700;color:var(--ink);white-space:nowrap">${centerText}</div>
   `;
 
   svgWrap.appendChild(svg);
