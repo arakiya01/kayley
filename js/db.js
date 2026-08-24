@@ -960,6 +960,139 @@ export function getBankPayeeAlias(description) {
   return one('SELECT kind, client_id, category FROM bank_payee_aliases WHERE match_key=?', [matchKey]);
 }
 
+/* ---------------- 裏付け判定（家賃・役員報酬・売掛金） ---------------- */
+
+// 源泉所得税は納期の特例のため、1月・7月の納付でだけ判定する。
+// 1月納付 → 前年7月〜12月分、7月納付 → 当年1月〜6月分。それ以外の月は null（判定なし）。
+export function officerWithholdingPeriodFor(year, month) {
+  if (month === 1) return { start: { year: year - 1, month: 7 }, end: { year: year - 1, month: 12 } };
+  if (month === 7) return { start: { year, month: 1 }, end: { year, month: 6 } };
+  return null;
+}
+
+// リンクを作るときの期間を、種類に応じて決める共通ヘルパー。
+// officer_withholding は該当半年期間、それ以外は取引自身の年月をそのまま単月として使う。
+export function derivePeriodForKind(kind, year, month) {
+  if (kind === 'officer_withholding') {
+    const derived = officerWithholdingPeriodFor(year, month);
+    if (derived) {
+      return {
+        period_start_year: derived.start.year, period_start_month: derived.start.month,
+        period_end_year: derived.end.year, period_end_month: derived.end.month,
+      };
+    }
+  }
+  return { period_start_year: year, period_start_month: month, period_end_year: year, period_end_month: month };
+}
+
+// 指定した種類・年月に対して、単月でリンクされている銀行取引の合計金額と件数。
+export function sumLinkedBankAmount({ kind, client_id, year, month }) {
+  const conditions = ['l.kind=?', 'l.period_start_year=?', 'l.period_start_month=?'];
+  const params = [kind, year, month];
+  if (client_id != null) { conditions.push('l.client_id=?'); params.push(client_id); }
+  const row = one(
+    `SELECT COALESCE(SUM(t.amount), 0) AS total, COUNT(*) AS count
+     FROM bank_transaction_links l JOIN bank_transactions t ON t.id = l.bank_transaction_id
+     WHERE ${conditions.join(' AND ')}`,
+    params
+  );
+  return { total: row.total, count: row.count };
+}
+
+// 半年集計など、期間の開始〜終了が完全一致するリンクの合計金額と件数（源泉所得税用）。
+export function sumLinkedBankAmountForPeriod({ kind, periodStartYear, periodStartMonth, periodEndYear, periodEndMonth }) {
+  const row = one(
+    `SELECT COALESCE(SUM(t.amount), 0) AS total, COUNT(*) AS count
+     FROM bank_transaction_links l JOIN bank_transactions t ON t.id = l.bank_transaction_id
+     WHERE l.kind=? AND l.period_start_year=? AND l.period_start_month=? AND l.period_end_year=? AND l.period_end_month=?`,
+    [kind, periodStartYear, periodStartMonth, periodEndYear, periodEndMonth]
+  );
+  return { total: row.total, count: row.count };
+}
+
+export function computeRentBackingStatus(year, month) {
+  const entry = getRentUtilityEntry(year, month);
+  const expectedTotal = entry ? entry.rent_total : 0;
+  const { total: bankTotal, count } = sumLinkedBankAmount({ kind: 'rent', year, month });
+  if (count === 0) return { status: 'none', bankAmount: 0, expectedTotal, count: 0 };
+  const bankAmount = Math.abs(bankTotal);
+  return { status: bankAmount === expectedTotal ? 'matched' : 'mismatch', bankAmount, expectedTotal, count };
+}
+
+export function computeOfficerNetBackingStatus(year, month) {
+  const entry = getOfficerPayEntry(year, month);
+  if (!entry) return { status: 'none', bankAmount: 0, expectedTotal: 0, count: 0 };
+  const deductions = resolveOfficerDeductions(year, month);
+  const deductionTotal = ['health_insurance', 'nursing_care_insurance', 'pension', 'child_support_levy', 'withholding_tax']
+    .reduce((a, k) => a + (entry[k] || 0), 0) + deductions.rent_deduction + deductions.utility_deduction;
+  const expectedTotal = entry.gross_pay - deductionTotal;
+  const { total: bankTotal, count } = sumLinkedBankAmount({ kind: 'officer_net', year, month });
+  if (count === 0) return { status: 'none', bankAmount: 0, expectedTotal, count: 0 };
+  const bankAmount = Math.abs(bankTotal);
+  return { status: bankAmount === expectedTotal ? 'matched' : 'mismatch', bankAmount, expectedTotal, count };
+}
+
+export function computeOfficerInsuranceBackingStatus(year, month) {
+  const entry = getOfficerPayEntry(year, month);
+  const expectedTotal = entry ? (entry.employer_insurance_total || 0) : 0;
+  const { total: bankTotal, count } = sumLinkedBankAmount({ kind: 'officer_insurance', year, month });
+  if (count === 0) return { status: 'none', bankAmount: 0, expectedTotal, count: 0 };
+  const bankAmount = Math.abs(bankTotal);
+  return { status: bankAmount === expectedTotal ? 'matched' : 'mismatch', bankAmount, expectedTotal, count };
+}
+
+export function computeOfficerWithholdingBackingStatus(year, month) {
+  const period = officerWithholdingPeriodFor(year, month);
+  if (!period) return { status: 'not_applicable', bankAmount: 0, expectedTotal: 0, count: 0 };
+  let expectedTotal = 0;
+  let cursor = { ...period.start };
+  while (cursor.year * 12 + cursor.month <= period.end.year * 12 + period.end.month) {
+    const e = getOfficerPayEntry(cursor.year, cursor.month);
+    if (e) expectedTotal += e.withholding_tax || 0;
+    cursor = cursor.month === 12 ? { year: cursor.year + 1, month: 1 } : { year: cursor.year, month: cursor.month + 1 };
+  }
+  const { total: bankTotal, count } = sumLinkedBankAmountForPeriod({
+    kind: 'officer_withholding',
+    periodStartYear: period.start.year, periodStartMonth: period.start.month,
+    periodEndYear: period.end.year, periodEndMonth: period.end.month,
+  });
+  if (count === 0) return { status: 'none', bankAmount: 0, expectedTotal, count: 0 };
+  const bankAmount = Math.abs(bankTotal);
+  return { status: bankAmount === expectedTotal ? 'matched' : 'mismatch', bankAmount, expectedTotal, count };
+}
+
+// 得意先の入金累計 vs 学習済み振込名義からの入金累計を、全期間で比較する
+// （複数月にまたがる入金があるため、月ごとの完全一致は強制しない）。
+export function computeArBackingStatus(clientId) {
+  const client = getClient(clientId);
+  const ledger = computeArLedger(client);
+  const expectedTotal = ledger.reduce((a, r) => a + r.payment, 0);
+  const row = one(
+    `SELECT COALESCE(SUM(t.amount), 0) AS total, COUNT(*) AS count
+     FROM bank_transaction_links l JOIN bank_transactions t ON t.id = l.bank_transaction_id
+     WHERE l.kind='ar' AND l.client_id=?`,
+    [clientId]
+  );
+  if (row.count === 0) return { status: 'none', bankAmount: 0, expectedTotal, count: 0 };
+  return { status: row.total === expectedTotal ? 'matched' : 'mismatch', bankAmount: row.total, expectedTotal, count: row.count };
+}
+
+// 未分類の銀行取引に、学習済みの振込名義ルールを適用する。適用件数を返す。
+// 既にリンク済みの取引は対象にしない（applyAccountRulesToMonthと同じ非破壊の原則）。
+export function applyBankPayeeAliasesToAccount(bankAccountId) {
+  const unlinked = listBankTransactions(bankAccountId, { onlyUnlinked: true });
+  let applied = 0;
+  unlinked.forEach((t) => {
+    const alias = getBankPayeeAlias(t.description);
+    if (!alias) return;
+    const [y, m] = t.txn_date.split('-').map(Number);
+    const period = derivePeriodForKind(alias.kind, y, m);
+    linkBankTransaction({ bank_transaction_id: t.id, kind: alias.kind, client_id: alias.client_id, category: alias.category, ...period });
+    applied += 1;
+  });
+  return applied;
+}
+
 export async function importBytes(bytes) {
   db = new SQL.Database(bytes);
   db.run(SCHEMA);
