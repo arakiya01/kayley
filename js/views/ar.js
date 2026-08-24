@@ -1,6 +1,7 @@
 import {
   listClientsForMonth, listClientsForMonths,
-  listClients, upsertClient, archiveClient, getArEntry, upsertArEntry, computeArLedger, unpaidStreak, getMeta, getFoundingDate,
+  listClients, upsertClient, archiveClient, getArEntry, upsertArEntry, computeArLedger, unpaidStreak,
+  computeArBackingStatus, getMeta, getFoundingDate,
   listAttachments, addAttachment, removeAttachment, clientTradeAllowsMonth,
 } from '../db.js';
 import {
@@ -10,6 +11,7 @@ import { renderFySelector } from './fyselector.js';
 import { enableGridPaste } from './gridpaste.js';
 import { lineChart, emptyChart } from '../charts.js';
 import { seriesColor, foldSeriesArrays } from '../colors.js';
+import { bankBadgeHtml } from '../bankbadge.js';
 import * as gdrive from '../gdrive.js';
 import { fileChipHtml } from '../fileicon.js';
 import { parseCurrencyInput, enableCurrencyInput } from '../currencyinput.js';
@@ -214,7 +216,7 @@ export function render(container, ctx) {
               <td class="num"><input type="text" inputmode="numeric" class="sales-input currency-input" value="${entry.sales || 0}" data-client="${client.id}"></td>
               <td class="num"><input type="text" inputmode="numeric" class="payment-input currency-input" value="${entry.payment || 0}" data-client="${client.id}"></td>
               <td class="num closing-cell">${yen(closing)}</td>
-              <td>${agingBadge(streak)}</td>
+              <td>${agingBadge(streak)} ${bankBadgeHtml(computeArBackingStatus(client.id))}</td>
               ${showInvoiceColumn ? `<td class="no-print invoice-cell" data-client="${client.id}" style="max-width:200px">
                 <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                   ${gdriveConfigured ? `<label class="btn ghost" style="cursor:pointer;font-size:11px;padding:4px 8px;white-space:nowrap;display:inline-block">
