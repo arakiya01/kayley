@@ -2,7 +2,6 @@ import {
   getOfficerPayEntry, upsertOfficerPayEntry, resolveOfficerDeductions, prevMonth, getMeta, getFoundingDate,
 } from '../db.js';
 import { yen, monthLabel, monthShort, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading, todayYearMonth } from '../format.js';
-import { renderMonthBar } from './monthbar.js';
 import { renderFySelector } from './fyselector.js';
 import { enableGridPaste } from './gridpaste.js';
 import { lineChart, donutChart } from '../charts.js';
@@ -30,7 +29,6 @@ export function render(container, ctx) {
   if (bulkFyStartYear == null) bulkFyStartYear = fiscalYearStartOf(year, month, fyStartMonth);
 
   container.innerHTML = `
-    <div id="month-bar-slot" style="${bulkMode ? 'display:none' : ''}"></div>
     <div class="toolbar">
       <span class="spacer"></span>
       <button class="btn ghost" id="bulk-toggle-btn">${bulkMode ? '月次入力に戻る' : '📋 一括入力（年度）'}</button>
@@ -67,8 +65,6 @@ export function render(container, ctx) {
             </div>
           </section>
         </div>
-      </div>
-      <div class="card">
         <h2>当月の内訳</h2>
         <div id="pay-breakdown-chart"></div>
       </div>
@@ -79,10 +75,6 @@ export function render(container, ctx) {
       <div id="pay-trend-chart"></div>
     </div>
   `;
-
-  renderMonthBar(container.querySelector('#month-bar-slot'), {
-    year, month, onChange: ctx.setMonth, showFinalize: true,
-  });
 
   container.querySelector('#bulk-toggle-btn').addEventListener('click', () => {
     bulkMode = !bulkMode;
@@ -130,7 +122,7 @@ export function render(container, ctx) {
     container.querySelector('#rent-deduction-display').innerHTML = `${yen(d.rent_deduction)}<span class="unit">円</span>`;
     container.querySelector('#utility-deduction-display').innerHTML = `${yen(d.utility_deduction)}<span class="unit">円</span>`;
     const deductionTotal = DEDUCTION_FIELDS.reduce((a, f) => a + (entry[f.key] || 0), 0) + d.rent_deduction + d.utility_deduction;
-    container.querySelector('#deduction-total').innerHTML = `${yen(deductionTotal)}<span class="unit">円</span>`;
+    container.querySelector('#deduction-total').innerHTML = `−${yen(deductionTotal)}<span class="unit">円</span>`;
     const net = entry.gross_pay - deductionTotal;
     container.querySelector('#net-pay').innerHTML = `${yen(net)}<span class="unit">円</span>`;
 

@@ -2,7 +2,6 @@ import { getRentUtilityEntry, upsertRentUtilityEntry, computeUtilityPersonalTota
 import {
   yen, monthShort, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading, todayYearMonth,
 } from '../format.js';
-import { renderMonthBar } from './monthbar.js';
 import { renderFySelector } from './fyselector.js';
 import { enableGridPaste } from './gridpaste.js';
 import { lineChart } from '../charts.js';
@@ -36,16 +35,15 @@ export function render(container, ctx) {
   if (bulkFyStartYear == null) bulkFyStartYear = fiscalYearStartOf(year, month, fyStartMonth);
 
   container.innerHTML = `
-    <div id="month-bar-slot" style="${bulkMode ? 'display:none' : ''}"></div>
-    <div class="toolbar">
-      <span class="spacer"></span>
-      <button class="btn ghost" id="bulk-toggle-btn">${bulkMode ? '月次入力に戻る' : '📋 一括入力（年度）'}</button>
-    </div>
     <div id="single-month-slot" style="${bulkMode ? 'display:none' : ''}">
       <div class="rent-document-grid">
       <div class="card rent-card">
         <h2>家賃</h2>
         <div class="card-note">全体の家賃実額と、個人負担分（固定額）を入力します。</div>
+        <div class="toolbar">
+          <span class="spacer"></span>
+          <button class="btn ghost bulk-toggle-btn">📋 一括入力（年度）</button>
+        </div>
         <div class="rent-fields-grid">
         <div class="field-row">
           <div class="field-label">家賃（全体・実額）</div>
@@ -94,6 +92,7 @@ export function render(container, ctx) {
       </div>
       </div>
     </div>
+    ${bulkMode ? `<div class="toolbar"><span class="spacer"></span><button class="btn ghost bulk-toggle-btn">月次入力に戻る</button></div>` : ''}
     <div id="bulk-slot"></div>
     <div class="card">
       <h2>個人負担額の推移</h2>
@@ -107,14 +106,10 @@ export function render(container, ctx) {
     </div>
   `;
 
-  renderMonthBar(container.querySelector('#month-bar-slot'), {
-    year, month, onChange: ctx.setMonth, showFinalize: true,
-  });
-
-  container.querySelector('#bulk-toggle-btn').addEventListener('click', () => {
+  container.querySelectorAll('.bulk-toggle-btn').forEach((btn) => btn.addEventListener('click', () => {
     bulkMode = !bulkMode;
     render(container, ctx);
-  });
+  }));
 
   if (bulkMode) {
     renderBulkTable();

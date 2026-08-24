@@ -2,14 +2,13 @@
 // 1) カード（楽天・SMBC）の利用明細PDFをアップロードすると、1行ずつの取引に自動展開する
 // 2) 現金の利用は手入力で1件ずつ追加できる
 // 3) 各取引に領収書を個別に紐づけられる
-// 4) それ以外の、取引に紐づかない領収書は下部の「経費の領収書」にまとめて置ける
+// 4) それ以外の、取引に紐づかない領収書は下部の専用欄にまとめて置ける
 import {
   getMeta, listAttachments, addAttachment, removeAttachment,
   listPaymentSources, upsertPaymentSource, archivePaymentSource,
   listStatementTransactions, addStatementTransaction, removeStatementTransaction, clearStatementTransactions,
 } from '../db.js';
 import { yen, escapeHtml, monthLabel } from '../format.js';
-import { renderMonthBar } from './monthbar.js';
 import * as gdrive from '../gdrive.js';
 import { extractPdfTextRows, detectAndParse } from '../statementparsers.js';
 import { fileChipHtml } from '../fileicon.js';
@@ -24,8 +23,6 @@ export function render(container, ctx) {
   const sources = listPaymentSources();
 
   container.innerHTML = `
-    <div id="month-bar-slot"></div>
-
     <div class="card">
       <h2>支払元（カード・現金）</h2>
       <div class="card-note">
@@ -49,7 +46,7 @@ export function render(container, ctx) {
     <div id="sources-slot"></div>
 
     <div class="card">
-      <h2>経費の領収書</h2>
+      <h2>取引に紐づかない領収書</h2>
       <div class="card-note">
         上のカード・現金の明細に紐づかない領収書は、ここにまとめてアップロードしておけます
         （科目の振り分けは税理士さんにお任せする前提の機能です）。
@@ -67,10 +64,6 @@ export function render(container, ctx) {
       <div id="expense-receipt-list"></div>
     </div>
   `;
-
-  renderMonthBar(container.querySelector('#month-bar-slot'), {
-    year, month, onChange: ctx.setMonth, showFinalize: true,
-  });
 
   renderAddSourceForm();
   renderSources();

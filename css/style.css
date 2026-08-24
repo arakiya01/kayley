@@ -174,14 +174,13 @@ nav.tabs a.active {
 .spine-divider { width:1px; height:18px; background:var(--grid-line); }
 .utility-link { text-decoration:none; color:var(--ink-soft); font-size:13px; padding:3px 2px; }
 .utility-link.active { color:var(--ink); font-weight:700; }
+.dashboard-link { padding:7px 12px; border:1px solid var(--grid-line); border-radius:var(--radius); text-decoration:none; color:var(--ink); font-size:13px; background:var(--card-raised); }
+.dashboard-link.active { border-color:var(--ink); font-weight:700; }
 .workflow-tabs { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:14px 0 12px; }
 .workflow-step { display:inline-flex; align-items:center; gap:7px; padding:7px 10px; border:1px solid transparent; border-radius:18px; text-decoration:none; color:var(--ink-soft); font-size:13px; }
 .workflow-step.active { color:var(--hanko); border-color:var(--hanko); background:var(--hanko-wash); font-weight:700; }
 .workflow-step .completion-seal { flex-shrink:0; }
 .workflow-hint { font-size:11.5px; color:var(--ink-muted); margin-left:4px; }
-.workflow-spacer { flex:1; }
-.report-link { padding:7px 12px; border:1px solid var(--grid-line); border-radius:var(--radius); text-decoration:none; font-size:13px; background:var(--card-raised); }
-.report-link.active { border-color:var(--ink); font-weight:700; }
 
 /* month picker */
 .month-bar {
@@ -222,15 +221,6 @@ nav.tabs a.active {
 .stepper button.step:hover { background: var(--hanko); color: #fff; border-color: var(--hanko); }
 .stepper button.step:disabled { opacity: 0.3; cursor: not-allowed; }
 .stepper button.step:disabled:hover { background: var(--card-raised); color: var(--ink); border-color: var(--grid-line); }
-
-.finalize-badge {
-  margin-left: auto;
-  margin-top: 6px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
 
 /* ---------- cards / sections ---------- */
 
@@ -302,6 +292,7 @@ nav.tabs a.active {
 .status-strip .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-muted); }
 .status-strip .pill.good .dot { background: var(--status-good); }
 .status-strip .pill.warning .dot { background: var(--status-warning); }
+.status-strip .pill.critical .dot { background: var(--status-critical); }
 .status-strip .pill.future { opacity: 0.55; }
 .status-strip .pill.disabled { opacity: 0.35; cursor: not-allowed; }
 
@@ -567,12 +558,6 @@ span.file-chip { cursor: default; }
   60% { transform: rotate(-6deg) scale(0.92); opacity: 1; }
   100% { transform: rotate(-6deg) scale(1); opacity: 1; }
 }
-.stamp-status-text {
-  font-size: 12.5px;
-  color: var(--ink-muted);
-}
-.stamp-status-text strong { color: var(--hanko); }
-
 /* ---------- charts ---------- */
 
 .chart-wrap { width: 100%; overflow-x: auto; }
@@ -644,14 +629,14 @@ table.ledger td.desc { text-align: left; }
 .net-pay-line strong { display:block; font-size:30px; line-height:1.25; text-align:right; }
 .net-pay-line .unit, .computed-line .unit { font-size:11px; margin-left:3px; color:var(--ink-muted); }
 @media (max-width: 900px) { .payslip-grid { grid-template-columns:1fr; gap:20px; } }
-.rent-document-grid { display:grid; grid-template-columns:1fr 1fr; grid-template-areas:"rent summary" "utility utility"; gap:20px; }
+.rent-document-grid { display:grid; grid-template-columns:1fr 1fr; grid-template-areas:"rent summary" "utility utility"; gap:20px; margin-bottom:20px; }
 .rent-document-grid .card { margin-bottom:0; }
 .rent-card { grid-area:rent; }
 .utility-card { grid-area:utility; }
 .rent-summary-card { grid-area:summary; }
 .rent-fields-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
 .rent-fields-grid .field-row { display:block; border-bottom:0; padding-bottom:0; }
-.rent-fields-grid .field-label { max-width:none; margin-bottom:5px; }
+.rent-fields-grid .field-label { max-width:none; min-height:40px; margin-bottom:5px; }
 @media (max-width: 900px) {
   .rent-document-grid { grid-template-columns:1fr; grid-template-areas:"rent" "utility" "summary"; }
   .rent-fields-grid { grid-template-columns:1fr; }
@@ -660,7 +645,8 @@ table.ledger td.desc { text-align: left; }
 .closing-month { font-family:var(--font-display); font-size:28px; font-weight:700; }
 .closing-status { color:var(--ink-muted); margin:2px 0 14px; }
 .closing-checklist { border-top:1px solid var(--grid-line); }
-.closing-row { display:grid; grid-template-columns:20px minmax(110px,1fr) auto; align-items:center; gap:9px; padding:9px 0; border-bottom:1px solid var(--hairline); }
+.closing-row { display:grid; grid-template-columns:20px minmax(110px,1fr) auto; align-items:center; gap:9px; padding:9px 0; border-bottom:1px solid var(--hairline); text-decoration:none; color:inherit; cursor:pointer; }
+.closing-row:hover { background:rgba(34,52,74,0.03); }
 .closing-row strong { font-size:12.5px; font-weight:500; color:var(--ink-soft); text-align:right; }
 .completion-seal { width:14px; height:14px; border:1.5px dashed var(--ink-muted); border-radius:50%; display:inline-block; }
 .completion-seal.done { border:4px double var(--status-good); background:rgba(12,163,12,0.12); }

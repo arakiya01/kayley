@@ -6,7 +6,6 @@ import {
 import {
   yen, monthShort, escapeHtml, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading, todayYearMonth,
 } from '../format.js';
-import { renderMonthBar } from './monthbar.js';
 import { renderFySelector } from './fyselector.js';
 import { enableGridPaste } from './gridpaste.js';
 import { lineChart, emptyChart } from '../charts.js';
@@ -30,7 +29,6 @@ export function render(container, ctx) {
   if (bulkFyStartYear == null) bulkFyStartYear = fiscalYearStartOf(year, month, fyStartMonth);
 
   container.innerHTML = `
-    <div id="month-bar-slot" class="${bulkMode ? 'no-print' : ''}" style="${bulkMode ? 'display:none' : ''}"></div>
     <div class="card">
       <h2>売掛金台帳</h2>
       <div class="card-note">得意先ごとの当月売上・入金を記録します。残高は自動で繰り越し計算されます。</div>
@@ -48,10 +46,6 @@ export function render(container, ctx) {
     </div>
     <div id="add-client-form-slot"></div>
   `;
-
-  renderMonthBar(container.querySelector('#month-bar-slot'), {
-    year, month, onChange: ctx.setMonth, showFinalize: true,
-  });
 
   container.querySelector('#bulk-toggle-btn').addEventListener('click', () => {
     bulkMode = !bulkMode;

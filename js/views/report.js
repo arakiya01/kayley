@@ -1,12 +1,11 @@
 import {
   listClientsForMonth, listClientsForMonths, computeArLedger, getRentUtilityEntry, computeUtilityPersonalTotal,
-  getOfficerPayEntry, resolveOfficerDeductions, getMeta, getMonthStatus, prevMonth,
+  getOfficerPayEntry, resolveOfficerDeductions, getMeta, getSectionCompletion, prevMonth,
   listAttachments, removeAttachment, getClient, listExpenseSourceSummaries, markReportExported,
 } from '../db.js';
 import {
   yen, monthLabel, escapeHtml, fiscalYearStartOf, fiscalYearMonths,
 } from '../format.js';
-import { renderMonthBar } from './monthbar.js';
 import * as gdrive from '../gdrive.js';
 import { renderPdfInto } from '../pdfpreview.js';
 import { showMask, updateMask, hideMask } from '../uimask.js';
@@ -24,8 +23,10 @@ export function render(container, ctx) {
   const { year, month } = ctx;
   const companyName = getMeta('company_name') || '';
   const clients = listClientsForMonth(year, month);
-  const status = getMonthStatus(year, month);
-  const finalized = !!(status && status.finalized);
+  // 「レポートを渡す」自体はこの印刷アクションで初めて済になるものなので、
+  // この判定からは除く（含めると初回印刷時だけ確定印が出ないことになってしまう）
+  const { report: _report, ...dataSections } = getSectionCompletion(year, month);
+  const allSectionsDone = Object.values(dataSections).every(Boolean);
   const prev = prevMonth(year, month);
 
   const arRows = clients.map((c) => {
@@ -106,7 +107,6 @@ export function render(container, ctx) {
   });
 
   container.innerHTML = `
-    <div id="month-bar-slot" class="no-print"></div>
     <div class="toolbar no-print">
       <span class="spacer"></span>
       <button class="btn primary" id="print-btn">この月をPDF出力（印刷）</button>
@@ -119,7 +119,7 @@ export function render(container, ctx) {
         <div class="card-note">対象月: ${monthLabel(year, month)}</div>
         <div class="card-note">作成日: ${new Date().toLocaleDateString('ja-JP')}</div>
       </div>
-      ${finalized ? `<div class="stamp stamped" style="opacity:1">確定</div>` : ''}
+      ${allSectionsDone ? `<div class="stamp stamped" style="opacity:1">確定</div>` : ''}
     </div>
 
     <div class="card">
@@ -218,10 +218,6 @@ export function render(container, ctx) {
       <div id="attachment-list"></div>
     </div>
   `;
-
-  renderMonthBar(container.querySelector('#month-bar-slot'), {
-    year, month, onChange: ctx.setMonth, showFinalize: true,
-  });
 
   let previewsLoaded = false;
   let loadPromise = null;

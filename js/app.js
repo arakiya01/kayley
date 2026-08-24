@@ -1,6 +1,5 @@
 import {
-  openDatabase, getMeta, getFoundingDate, exportBytes, listArEntriesForMonth,
-  getRentUtilityEntry, getOfficerPayEntry, listExpenseSourceSummaries, listAttachments,
+  openDatabase, getMeta, getFoundingDate, exportBytes, getSectionCompletion,
 } from './db.js';
 import { todayYearMonth, escapeHtml } from './format.js';
 import { applyTheme } from './theme.js';
@@ -12,6 +11,7 @@ import * as officerpay from './views/officerpay.js';
 import * as expenses from './views/expenses.js';
 import * as report from './views/report.js';
 import * as settings from './views/settings.js';
+import { renderMonthBar } from './views/monthbar.js';
 
 const TABS = [
   { key: 'dashboard', label: 'ダッシュボード', mod: dashboard, needsMonth: true },
@@ -49,19 +49,20 @@ function renderShell() {
   const root = document.getElementById('app-shell');
   root.innerHTML = `
     <header class="progress-spine" id="progress-spine"></header>
+    <div id="month-bar-slot"></div>
     <div id="view-root"></div>
   `;
 }
 
 function renderProgressSpine() {
   const companyName = getMeta('company_name') || '';
-  const attachments = listAttachments(state.year, state.month);
-  const expenseRows = listExpenseSourceSummaries([{ year: state.year, month: state.month }]);
+  const completion = getSectionCompletion(state.year, state.month);
   const steps = [
-    { key: 'ar', label: '売掛金', done: listArEntriesForMonth(state.year, state.month).length > 0 },
-    { key: 'rent', label: '家賃・光熱費', done: !!getRentUtilityEntry(state.year, state.month) },
-    { key: 'officer', label: '役員報酬', done: !!getOfficerPayEntry(state.year, state.month) },
-    { key: 'expenses', label: '経費', done: expenseRows.length > 0 || attachments.some((a) => a.category !== 'invoice' && a.category !== 'statement') },
+    { key: 'ar', label: '売掛金', done: completion.ar },
+    { key: 'rent', label: '家賃・光熱費', done: completion.rent },
+    { key: 'officer', label: '役員報酬', done: completion.officer },
+    { key: 'expenses', label: '経費', done: completion.expenses },
+    { key: 'report', label: 'レポートを渡す', done: completion.report },
   ];
   const remaining = steps.filter((step) => !step.done).length;
   document.getElementById('progress-spine').innerHTML = `
@@ -69,14 +70,12 @@ function renderProgressSpine() {
       <a class="wordmark-link" href="#/dashboard"><span class="display">Kayley</span><small>SOLO BOOKKEEPING</small></a>
       <span class="spine-company">${companyName ? escapeHtml(companyName) : '<a href="#/settings">会社名を設定する</a>'}</span>
       <span class="spine-divider"></span>
-      <a class="utility-link ${state.tab === 'dashboard' ? 'active' : ''}" href="#/dashboard">概況</a>
+      <a class="dashboard-link ${state.tab === 'dashboard' ? 'active' : ''}" href="#/dashboard">概況</a>
       <a class="utility-link ${state.tab === 'settings' ? 'active' : ''}" href="#/settings">設定</a>
     </div>
     <nav class="workflow-tabs">
       ${steps.map((step) => `<a href="#/${step.key}" class="workflow-step ${state.tab === step.key ? 'active' : ''}"><span class="completion-seal ${step.done ? 'done' : ''}"></span>${step.label}</a>`).join('')}
       ${remaining > 0 ? `<span class="workflow-hint">あと${remaining}つで締められます</span>` : ''}
-      <span class="workflow-spacer"></span>
-      <a class="report-link ${state.tab === 'report' ? 'active' : ''}" href="#/report">レポートを渡す</a>
     </nav>
   `;
 }
@@ -110,6 +109,12 @@ function renderView() {
       renderView();
     },
   };
+  const monthBarSlot = document.getElementById('month-bar-slot');
+  if (tab.needsMonth) {
+    renderMonthBar(monthBarSlot, { year: state.year, month: state.month, onChange: ctx.setMonth });
+  } else {
+    monthBarSlot.innerHTML = '';
+  }
   tab.mod.render(viewRoot, ctx);
 }
 

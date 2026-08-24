@@ -576,18 +576,22 @@ export function resolveOfficerDeductions(year, month) {
   };
 }
 
-/* ---------------- month status (finalize / hanko stamp) ---------------- */
+/* ---------------- month status / section completion ---------------- */
 
 export function getMonthStatus(year, month) {
   return one('SELECT * FROM month_status WHERE year=? AND month=?', [year, month]);
 }
 
-export function setMonthFinalized(year, month, finalized) {
-  run(
-    `INSERT INTO month_status (year, month, finalized, finalized_at) VALUES (?, ?, ?, ?)
-     ON CONFLICT(year, month) DO UPDATE SET finalized=excluded.finalized, finalized_at=excluded.finalized_at`,
-    [year, month, finalized ? 1 : 0, finalized ? new Date().toISOString() : null]
-  );
+export function getSectionCompletion(year, month) {
+  const arDone = listArEntriesForMonth(year, month).length > 0;
+  const rentDone = !!getRentUtilityEntry(year, month);
+  const officerDone = !!getOfficerPayEntry(year, month);
+  const attachments = listAttachments(year, month);
+  const expenseRows = listExpenseSourceSummaries([{ year, month }]);
+  const expensesDone = expenseRows.length > 0 || attachments.some((a) => a.category !== 'invoice' && a.category !== 'statement');
+  const status = getMonthStatus(year, month);
+  const reportDone = !!(status && status.report_exported_at);
+  return { ar: arDone, rent: rentDone, officer: officerDone, expenses: expensesDone, report: reportDone };
 }
 
 export function markReportExported(year, month) {
@@ -596,13 +600,6 @@ export function markReportExported(year, month) {
      ON CONFLICT(year, month) DO UPDATE SET report_exported_at=excluded.report_exported_at`,
     [year, month, new Date().toISOString()]
   );
-}
-
-export function getLastFinalizedAt() {
-  const row = one(
-    'SELECT finalized_at FROM month_status WHERE finalized = 1 ORDER BY finalized_at DESC LIMIT 1'
-  );
-  return row ? row.finalized_at : null;
 }
 
 /* ---------------- attachments (証憑: 領収書・請求書) ---------------- */
