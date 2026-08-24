@@ -1,6 +1,6 @@
 import {
   listClientsForMonth, listClientsForMonths,
-  upsertClient, getArEntry, upsertArEntry, computeArLedger, unpaidStreak, getMeta, getFoundingDate,
+  listClients, upsertClient, archiveClient, getArEntry, upsertArEntry, computeArLedger, unpaidStreak, getMeta, getFoundingDate,
   listAttachments, addAttachment, removeAttachment, clientTradeAllowsMonth,
 } from '../db.js';
 import {
@@ -40,6 +40,10 @@ export function render(container, ctx) {
       <div class="card-note">得意先ごとの当月売上・入金を記録します。残高は自動で繰り越し計算されます。</div>
       <div id="ar-table-slot"></div>
     </div>
+    <details class="card settings-fold">
+      <summary><h2>得意先の設定</h2><span class="card-note" style="margin:0">取引終了年月を設定すると、その月を過ぎた時点で自動的に休止扱いになります（グラフでも、取引開始前・終了後の月は0円ではなく「データなし」として扱われます）。未設定の場合は今まで通り手動で休止・再開できます。</span></summary>
+      <div id="client-settings-slot"></div>
+    </details>
     <div class="card">
       <h2>売上推移</h2>
       <div class="card-note">${fiscalPeriodHeading(year, month, fyStartMonth, getFoundingDate())}</div>
@@ -54,6 +58,7 @@ export function render(container, ctx) {
   });
 
   renderTable();
+  renderClientSettings();
   renderCharts();
 
   container.querySelector('#add-client-btn').addEventListener('click', () => {
@@ -97,9 +102,61 @@ export function render(container, ctx) {
       });
       slot.innerHTML = '';
       renderTable();
+      renderClientSettings();
       renderCharts();
     });
   });
+
+  function renderClientSettings() {
+    const slot = container.querySelector('#client-settings-slot');
+    const clients = listClients({ includeArchived: true });
+    slot.innerHTML = `
+      <table class="ledger">
+        <thead><tr><th>得意先</th><th class="num">開始残高</th><th>取引開始年月</th><th>取引終了年月</th><th>状態</th><th></th></tr></thead>
+        <tbody>
+          ${clients.map((c) => {
+            const startVal = c.trade_start_year && c.trade_start_month ? `${c.trade_start_year}-${String(c.trade_start_month).padStart(2, '0')}` : '';
+            const endVal = c.trade_end_year && c.trade_end_month ? `${c.trade_end_year}-${String(c.trade_end_month).padStart(2, '0')}` : '';
+            const autoManaged = !!(c.trade_end_year && c.trade_end_month);
+            return `
+              <tr>
+                <td>${escapeHtml(c.name)}</td>
+                <td class="num">${c.opening_balance}</td>
+                <td><input type="month" class="client-trade-start" data-id="${c.id}" value="${startVal}" style="font-size:12px;padding:4px 6px"></td>
+                <td><input type="month" class="client-trade-end" data-id="${c.id}" value="${endVal}" style="font-size:12px;padding:4px 6px"></td>
+                <td>${c.archived ? '休止中' : '有効'}${autoManaged ? '<span class="card-note" style="margin:0">終了年月により自動</span>' : ''}</td>
+                <td>${autoManaged ? '' : `<button class="btn ghost archive-btn" data-id="${c.id}" data-archived="${c.archived}">${c.archived ? '再開する' : '休止する'}</button>`}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
+    slot.querySelectorAll('.archive-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        archiveClient(Number(btn.dataset.id), btn.dataset.archived === '1' ? 0 : 1);
+        renderClientSettings();
+        renderTable();
+        renderCharts();
+      });
+    });
+    slot.querySelectorAll('.client-trade-start, .client-trade-end').forEach((input) => {
+      input.addEventListener('change', () => {
+        const client = clients.find((c) => c.id === Number(input.dataset.id));
+        const [valueYear, valueMonth] = input.value ? input.value.split('-').map(Number) : [null, null];
+        const isStart = input.classList.contains('client-trade-start');
+        upsertClient({
+          ...client,
+          ...(isStart
+            ? { trade_start_year: valueYear, trade_start_month: valueMonth }
+            : { trade_end_year: valueYear, trade_end_month: valueMonth }),
+        });
+        renderClientSettings();
+        renderTable();
+        renderCharts();
+      });
+    });
+  }
 
   function renderTable() {
     if (bulkMode) { renderBulkTable(); return; }
@@ -131,6 +188,9 @@ export function render(container, ctx) {
     });
 
     const invoicesFor = (clientId) => monthAttachments.filter((a) => a.category === 'invoice' && a.client_id === clientId);
+    // Drive未連携なら請求書列そのものを出さない（未連携の案内はヘッダの通知で1回だけ伝えている）。
+    // ただし過去に上げた請求書が残っている月では、見えなくならないように列を残す。
+    const showInvoiceColumn = gdriveConfigured || monthAttachments.some((a) => a.category === 'invoice');
 
     slot.innerHTML = `
       <div class="bulk-table-wrap">
@@ -143,7 +203,7 @@ export function render(container, ctx) {
             <th class="num">入金（円）</th>
             <th class="num">当月残高（円）</th>
             <th>状況</th>
-            <th class="no-print">請求書</th>
+            ${showInvoiceColumn ? '<th class="no-print">請求書</th>' : ''}
           </tr>
         </thead>
         <tbody>
@@ -155,13 +215,12 @@ export function render(container, ctx) {
               <td class="num"><input type="text" inputmode="numeric" class="payment-input currency-input" value="${entry.payment || 0}" data-client="${client.id}"></td>
               <td class="num closing-cell">${yen(closing)}</td>
               <td>${agingBadge(streak)}</td>
-              <td class="no-print invoice-cell" data-client="${client.id}" style="max-width:200px">
+              ${showInvoiceColumn ? `<td class="no-print invoice-cell" data-client="${client.id}" style="max-width:200px">
                 <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-                  <label class="btn ghost" style="cursor:${gdriveConfigured ? 'pointer' : 'not-allowed'};${gdriveConfigured ? '' : 'opacity:0.45'};font-size:11px;padding:4px 8px;white-space:nowrap;display:inline-block">
+                  ${gdriveConfigured ? `<label class="btn ghost" style="cursor:pointer;font-size:11px;padding:4px 8px;white-space:nowrap;display:inline-block">
                     ＋請求書
-                    <input type="file" class="invoice-file-input" data-client="${client.id}" style="display:none" ${gdriveConfigured ? '' : 'disabled'}>
-                  </label>
-                  ${gdriveConfigured ? '' : '<span class="upload-disabled-hint">Google Drive未接続。「設定」タブで接続してください。</span>'}
+                    <input type="file" class="invoice-file-input" data-client="${client.id}" style="display:none">
+                  </label>` : ''}
                   ${invoicesFor(client.id).map((it) => `
                     <span style="display:inline-flex;align-items:center;gap:2px">
                       ${fileChipHtml({ name: it.name, webViewLink: it.web_view_link })}
@@ -170,7 +229,7 @@ export function render(container, ctx) {
                   `).join('')}
                 </div>
                 <span class="invoice-status card-note" style="margin:0;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" data-client="${client.id}"></span>
-              </td>
+              </td>` : ''}
             </tr>
           `).join('')}
         </tbody>
@@ -182,7 +241,7 @@ export function render(container, ctx) {
             <td class="num">${yen(rows.reduce((a, r) => a + (r.entry.payment || 0), 0))}</td>
             <td class="num">${yen(rows.reduce((a, r) => a + r.closing, 0))}</td>
             <td></td>
-            <td class="no-print"></td>
+            ${showInvoiceColumn ? '<td class="no-print"></td>' : ''}
           </tr>
         </tfoot>
       </table>

@@ -180,6 +180,32 @@ nav.tabs a.active {
 .workflow-step .completion-seal { flex-shrink:0; }
 .workflow-hint { font-size:11.5px; color:var(--ink-muted); margin-left:4px; }
 
+.notice-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--card-raised);
+  border: 1px solid var(--grid-line);
+  border-radius: var(--radius);
+  padding: 7px 12px;
+  font-size: 12.5px;
+  margin-top: 10px;
+}
+.notice-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.notice-row.warning .notice-dot { background: var(--status-warning); }
+.notice-row.info .notice-dot { background: var(--ink-muted); }
+.notice-text { flex: 1; color: var(--ink-soft); }
+.notice-action {
+  background: none;
+  border: none;
+  color: var(--hanko);
+  cursor: pointer;
+  font-size: 12.5px;
+  text-decoration: underline;
+  padding: 0;
+  font-family: inherit;
+}
+
 /* month picker */
 .month-bar {
   display: flex;
@@ -292,6 +318,30 @@ nav.tabs a.active {
   font-size: 18px;
   margin-bottom: 4px;
 }
+
+/* 設定・得意先設定などの「最初に一度決めるもの」を既定で畳んでおくための折りたたみカード */
+details.settings-fold > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  position: relative;
+  padding-right: 24px;
+}
+details.settings-fold > summary::-webkit-details-marker { display: none; }
+details.settings-fold > summary h2 { margin-bottom: 0; flex-shrink: 0; }
+details.settings-fold > summary::after {
+  content: "▾";
+  position: absolute;
+  right: 0;
+  top: 0;
+  font-size: 11px;
+  color: var(--ink-muted);
+  transition: transform 0.18s ease;
+}
+details.settings-fold[open] > summary::after { transform: rotate(180deg); }
+details.settings-fold[open] > summary { margin-bottom: 16px; }
 
 /* カードタイトルの右側にそのカードの主要操作ボタンを並べる共通レイアウト */
 .card-header {
@@ -677,7 +727,6 @@ table.ledger tr.expense-group td { border-top: 2px solid var(--grid-line); font-
 table.ledger tr.expense-source td:first-child { padding-left: 28px; font-size: 12.5px; color: var(--ink-muted); }
 table.ledger tr.expense-source td.num { font-size: 12.5px; color: var(--ink-soft); }
 table.ledger td.desc { text-align: left; }
-.upload-disabled-hint { display: inline-block; max-width: 180px; font-size: 11px; line-height: 1.35; color: var(--ink-muted); }
 .compact-sources { padding-top: 16px; padding-bottom: 16px; }
 .compact-source-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 0; border-top: 1px solid var(--hairline); }
 .compact-source-row .spacer { flex: 1; }
@@ -724,7 +773,7 @@ table.ledger td.desc { text-align: left; }
 .closing-figures .lead-figure .value { font-size:30px; }
 .closing-figure-pair { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
 .closing-figure-pair .value { font-size:19px; }
-.aging-strip { display:flex; align-items:center; gap:10px; margin-top:18px; padding-top:12px; border-top:1px solid var(--grid-line); }
+.aging-strip { display:flex; align-items:center; gap:10px; margin-top:18px; padding-top:12px; border-top:1px solid var(--grid-line); text-decoration:none; color:inherit; }
 @media (max-width: 900px) { .closing-grid { grid-template-columns:1fr; } }
 
 /* empty states */

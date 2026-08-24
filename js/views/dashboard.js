@@ -84,12 +84,9 @@ export function render(container, ctx) {
   });
 
   const aging = agingSummary(clients, year, month);
-  const agingTotal = aging.reduce((a, x) => a + x.balance, 0);
 
   const todayIdx = today.year * 12 + today.month;
   const monthAttachments = listAttachments(year, month);
-  const invoiceCount = monthAttachments.filter((a) => a.category === 'invoice').length;
-  const receiptCount = monthAttachments.filter((a) => a.category !== 'invoice').length;
   const arEntries = listArEntriesForMonth(year, month);
   const expenseRows = listExpenseSourceSummaries([{ year, month }]);
   const expenseTxnCount = expenseRows.reduce((sum, row) => sum + row.transaction_count, 0);
@@ -131,7 +128,7 @@ export function render(container, ctx) {
           <div class="stat-tile"><div class="label">今期の売上累計</div><div class="value num">${yen(fySalesSum)}<span class="unit">円</span></div><div class="delta">入金累計 ${yen(fyPaymentSum)}円</div></div>
         </section>
       </div>
-      ${aging.length > 0 ? `<div class="aging-strip"><span class="badge ${aging.some((a) => a.streak >= 3) ? 'critical' : 'warning'}">滞留中の売掛金 ${aging.length}件</span><strong class="num">${yen(agingTotal)}円</strong></div>` : ''}
+      ${aging.length > 0 ? `<a href="#/ar" class="aging-strip"><span class="badge ${aging.some((a) => a.streak >= 3) ? 'critical' : 'warning'}">滞留中の売掛金 ${aging.length}件</span></a>` : ''}
     </div>
 
     <div class="two-col">
@@ -147,45 +144,25 @@ export function render(container, ctx) {
       </div>
     </div>
 
-    <div class="two-col">
-      <div class="card">
-        <h2>未回収の滞留</h2>
-        <div class="card-note">2ヶ月以上、売上計上済みで入金が確認できていない得意先です。</div>
-        ${aging.length === 0 ? `
-          <div class="card-note" style="margin:0">現在、滞留している得意先はありません。</div>
-        ` : `
-          <div style="display:flex;flex-direction:column">
-            ${aging.map((a) => `
-              <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--hairline)">
-                <span style="flex:1">${escapeHtml(a.name)}</span>
-                <span class="badge ${a.streak >= 3 ? 'critical' : 'warning'}">滞留 ${a.streak}ヶ月</span>
-                <span class="num" style="min-width:100px;text-align:right">${yen(a.balance)}<span style="font-size:11px;color:var(--ink-muted)">円</span></span>
-              </div>
-            `).join('')}
-          </div>
-        `}
-        <div class="toolbar" style="margin-top:10px">
-          <span class="spacer"></span>
-          <a class="btn ghost" href="#/ar">売掛金台帳を開く</a>
+    <div class="card">
+      <h2>未回収の滞留</h2>
+      <div class="card-note">2ヶ月以上、売上計上済みで入金が確認できていない得意先です。</div>
+      ${aging.length === 0 ? `
+        <div class="card-note" style="margin:0">現在、滞留している得意先はありません。</div>
+      ` : `
+        <div style="display:flex;flex-direction:column">
+          ${aging.map((a) => `
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--hairline)">
+              <span style="flex:1">${escapeHtml(a.name)}</span>
+              <span class="badge ${a.streak >= 3 ? 'critical' : 'warning'}">滞留 ${a.streak}ヶ月</span>
+              <span class="num" style="min-width:100px;text-align:right">${yen(a.balance)}<span style="font-size:11px;color:var(--ink-muted)">円</span></span>
+            </div>
+          `).join('')}
         </div>
-      </div>
-      <div class="card">
-        <h2>証憑（${monthLabel(year, month)}）</h2>
-        <div class="card-note">Google Driveに保存された当月分の請求書・領収書の件数です。</div>
-        <div class="card-grid">
-          <div class="stat-tile">
-            <div class="label">請求書</div>
-            <div class="value num">${invoiceCount}<span class="unit">件</span></div>
-          </div>
-          <div class="stat-tile">
-            <div class="label">領収書</div>
-            <div class="value num">${receiptCount}<span class="unit">件</span></div>
-          </div>
-        </div>
-        <div class="toolbar" style="margin-top:10px">
-          <span class="spacer"></span>
-          <a class="btn ghost" href="#/report">月次レポートを開く</a>
-        </div>
+      `}
+      <div class="toolbar" style="margin-top:10px">
+        <span class="spacer"></span>
+        <a class="btn ghost" href="#/ar">売掛金台帳を開く</a>
       </div>
     </div>
   `;

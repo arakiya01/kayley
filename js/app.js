@@ -1,7 +1,7 @@
 import {
-  openDatabase, getMeta, getFoundingDate, exportBytes, getSectionCompletion,
+  openDatabase, getMeta, getFoundingDate, exportBytes, getSectionCompletion, isMonthAllowed,
 } from './db.js';
-import { todayYearMonth, escapeHtml } from './format.js';
+import { todayYearMonth, escapeHtml, monthLabel, addMonths } from './format.js';
 import { applyTheme } from './theme.js';
 import * as gdrive from './gdrive.js';
 import * as dashboard from './views/dashboard.js';
@@ -52,6 +52,7 @@ function renderShell() {
       <div id="spine-top-slot"></div>
       <div id="month-bar-slot"></div>
       <nav class="workflow-tabs" id="workflow-tabs-slot"></nav>
+      <div id="notice-slot"></div>
     </header>
     <div id="view-root"></div>
   `;
@@ -82,6 +83,51 @@ function renderProgressSpine() {
     ${steps.map((step) => `<a href="#/${step.key}" class="workflow-step ${state.tab === step.key ? 'active' : ''}"><span class="completion-seal ${step.done ? 'done' : ''}"></span>${step.label}</a>`).join('')}
     ${remaining > 0 ? `<span class="workflow-hint">あと${remaining}つで締められます</span>` : ''}
   `;
+  renderNotices();
+}
+
+function renderNotices() {
+  const notices = [];
+  const today = todayYearMonth();
+  let unclosedMonth = null;
+  for (let offset = -1; offset >= -24; offset--) {
+    const candidate = addMonths(today.year, today.month, offset);
+    if (!isMonthAllowed(candidate.year, candidate.month)) continue;
+    const completion = getSectionCompletion(candidate.year, candidate.month);
+    if (![completion.ar, completion.rent, completion.officer, completion.expenses, completion.report].every(Boolean)) {
+      unclosedMonth = candidate;
+      break;
+    }
+  }
+  if (unclosedMonth && (unclosedMonth.year !== state.year || unclosedMonth.month !== state.month)) {
+    notices.push(`
+      <div class="notice-row warning">
+        <span class="notice-dot"></span>
+        <span class="notice-text">${monthLabel(unclosedMonth.year, unclosedMonth.month)}がまだ締まっていません</span>
+        <button class="notice-action" id="notice-open-month">その月を開く</button>
+      </div>
+    `);
+  }
+  if (!getMeta('gdrive_client_id') && state.tab !== 'settings') {
+    notices.push(`
+      <div class="notice-row info">
+        <span class="notice-dot"></span>
+        <span class="notice-text">Google Drive未連携のため、請求書・領収書を保存できません</span>
+        <a class="notice-action" href="#/settings">設定を開く</a>
+      </div>
+    `);
+  }
+  const slot = document.getElementById('notice-slot');
+  slot.innerHTML = notices.join('');
+  const openMonthButton = slot.querySelector('#notice-open-month');
+  if (openMonthButton) {
+    openMonthButton.addEventListener('click', () => {
+      state.year = unclosedMonth.year;
+      state.month = unclosedMonth.month;
+      saveUiState(state);
+      renderView();
+    });
+  }
 }
 
 function clampToFoundingDate() {

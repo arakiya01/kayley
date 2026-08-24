@@ -1,7 +1,6 @@
 import {
-  getMeta, setMeta, listClients, upsertClient, archiveClient, exportBytes, importBytes,
+  getMeta, setMeta, exportBytes, importBytes,
   listThemePresets, addThemePreset, removeThemePreset,
-  listPaymentSources, archivePaymentSource,
 } from '../db.js';
 import { Storage } from '../storage.js';
 import { escapeHtml } from '../format.js';
@@ -22,8 +21,6 @@ export function render(container) {
   const foundingYear = getMeta('founding_year') || '';
   const foundingMonth = getMeta('founding_month') || '';
   const thisYear = new Date().getFullYear();
-  const clients = listClients({ includeArchived: true });
-  const paymentSources = listPaymentSources({ includeArchived: true });
   const gdriveClientId = getMeta('gdrive_client_id') || '';
   const gdriveConnected = gdrive.isConnected();
   const showClientIdField = showClientIdOverride || !gdriveClientId;
@@ -83,56 +80,6 @@ export function render(container) {
     </div>
 
     <div class="card">
-      <h2>得意先の管理</h2>
-      <div class="card-note">
-        取引終了年月を設定すると、その月を過ぎた時点で自動的に休止扱いになります（グラフでも、取引開始前・終了後の月は0円ではなく「データなし」として扱われます）。
-        未設定の場合は今まで通り手動で休止・再開できます。
-      </div>
-      <table class="ledger">
-        <thead><tr><th>得意先</th><th class="num">開始残高</th><th>取引開始年月</th><th>取引終了年月</th><th>状態</th><th></th></tr></thead>
-        <tbody>
-          ${clients.map((c) => {
-            const startVal = c.trade_start_year && c.trade_start_month ? `${c.trade_start_year}-${String(c.trade_start_month).padStart(2, '0')}` : '';
-            const endVal = c.trade_end_year && c.trade_end_month ? `${c.trade_end_year}-${String(c.trade_end_month).padStart(2, '0')}` : '';
-            const autoManaged = !!(c.trade_end_year && c.trade_end_month);
-            return `
-              <tr>
-                <td>${escapeHtml(c.name)}</td>
-                <td class="num">${c.opening_balance}</td>
-                <td><input type="month" class="client-trade-start" data-id="${c.id}" value="${startVal}" style="font-size:12px;padding:4px 6px"></td>
-                <td><input type="month" class="client-trade-end" data-id="${c.id}" value="${endVal}" style="font-size:12px;padding:4px 6px"></td>
-                <td>
-                  ${c.archived ? '休止中' : '有効'}
-                  ${autoManaged ? '<span class="card-note" style="margin:0">終了年月により自動</span>' : ''}
-                </td>
-                <td>${autoManaged ? '' : `<button class="btn ghost archive-btn" data-id="${c.id}" data-archived="${c.archived}">${c.archived ? '再開する' : '休止する'}</button>`}</td>
-              </tr>
-            `;
-          }).join('')}
-        </tbody>
-      </table>
-    </div>
-
-    <div class="card">
-      <h2>支払元の管理（カード・現金）</h2>
-      <div class="card-note">経費タブで使うカード・現金の一覧です。休止しても過去の明細データは残ります。</div>
-      <table class="ledger">
-        <thead><tr><th>名前</th><th>種類</th><th>状態</th><th></th></tr></thead>
-        <tbody>
-          ${paymentSources.map((s) => `
-            <tr>
-              <td>${escapeHtml(s.name)}</td>
-              <td>${s.kind === 'cash' ? '現金' : 'カード'}</td>
-              <td>${s.archived ? '休止中' : '有効'}</td>
-              <td><button class="btn ghost archive-source-btn" data-id="${s.id}" data-archived="${s.archived}">${s.archived ? '再開する' : '休止する'}</button></td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-      ${paymentSources.length === 0 ? `<div class="card-note" style="margin:0">まだ登録されていません。「経費」タブから追加できます。</div>` : ''}
-    </div>
-
-    <div class="card">
       <div class="card-header">
         <h2>バックアップ</h2>
         <div class="toolbar">
@@ -149,11 +96,6 @@ export function render(container) {
     <div class="card">
       <div class="card-header">
         <h2>Google Drive連携（証憑の保存）</h2>
-        <div class="toolbar">
-          <span class="badge ${gdriveConnected ? 'good' : 'warning'}">${gdriveConnected ? '接続済み' : (gdriveClientId ? '未接続（アップロード時に自動で繋ぎ直します）' : '未接続')}</span>
-          <button class="btn primary" id="gdrive-connect-btn">接続する</button>
-          <button class="btn ghost" id="gdrive-disconnect-btn" ${gdriveConnected ? '' : 'disabled'}>切断する</button>
-        </div>
       </div>
       <div class="card-note">
         領収書・請求書などのファイルを、あなた自身のGoogleドライブ内の専用フォルダ（「Kayley」）に保存できるようにします。
@@ -173,6 +115,11 @@ export function render(container) {
           </div>
         </div>
       `}
+      <div class="toolbar">
+        <span class="badge ${gdriveConnected ? 'good' : 'warning'}">${gdriveConnected ? '接続済み' : (gdriveClientId ? '未接続（アップロード時に自動で繋ぎ直します）' : '未接続')}</span>
+        <button class="btn primary" id="gdrive-connect-btn">接続する</button>
+        <button class="btn ghost" id="gdrive-disconnect-btn" ${gdriveConnected ? '' : 'disabled'}>切断する</button>
+      </div>
       <div id="gdrive-status-note" class="card-note"></div>
 
       <div class="card-note" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--hairline)">
@@ -189,9 +136,8 @@ export function render(container) {
       </div>
     </div>
 
-    <div class="card">
-      <h2>外観</h2>
-      <div class="card-note">背景・カードの色やパターンを好みに変更できます。</div>
+    <details class="card settings-fold">
+      <summary><h2>外観</h2><span class="card-note" style="margin:0">背景・カードの色やパターンを好みに変更できます。</span></summary>
       <div class="field-row">
         <div class="field-label">背景色</div>
         <div class="field-value"><input type="color" id="theme_bg_color" value="${bgColor}" style="max-width:70px;padding:2px"></div>
@@ -297,7 +243,7 @@ export function render(container) {
         </div>
         <img src="${bgImage}" alt="アップロードした背景画像" style="max-width:200px;border-radius:3px;border:1px solid var(--grid-line);margin-top:10px">
       ` : ''}
-    </div>
+    </details>
   `;
 
   container.querySelector('#company_name').addEventListener('change', (e) => setMeta('company_name', e.target.value));
@@ -305,40 +251,6 @@ export function render(container) {
   container.querySelector('#founding_month').addEventListener('change', (e) => setMeta('founding_month', e.target.value));
   container.querySelector('#fy_start').addEventListener('change', (e) => setMeta('fiscal_year_start_month', e.target.value));
   container.querySelector('#default_pct').addEventListener('change', (e) => setMeta('default_utility_personal_pct', e.target.value));
-
-  container.querySelectorAll('.archive-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const archived = btn.dataset.archived === '1' ? 0 : 1;
-      archiveClient(Number(btn.dataset.id), archived);
-      render(container);
-    });
-  });
-
-  container.querySelectorAll('.client-trade-start').forEach((input) => {
-    input.addEventListener('change', () => {
-      const client = clients.find((c) => c.id === Number(input.dataset.id));
-      const [y, m] = input.value ? input.value.split('-').map(Number) : [null, null];
-      upsertClient({ ...client, trade_start_year: y, trade_start_month: m });
-      render(container);
-    });
-  });
-
-  container.querySelectorAll('.client-trade-end').forEach((input) => {
-    input.addEventListener('change', () => {
-      const client = clients.find((c) => c.id === Number(input.dataset.id));
-      const [y, m] = input.value ? input.value.split('-').map(Number) : [null, null];
-      upsertClient({ ...client, trade_end_year: y, trade_end_month: m });
-      render(container);
-    });
-  });
-
-  container.querySelectorAll('.archive-source-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const archived = btn.dataset.archived === '1' ? 0 : 1;
-      archivePaymentSource(Number(btn.dataset.id), archived);
-      render(container);
-    });
-  });
 
   container.querySelector('#export-btn').addEventListener('click', () => {
     Storage.downloadBackup(exportBytes());

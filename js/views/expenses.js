@@ -50,10 +50,10 @@ export function render(container, ctx) {
       <div class="card-header">
         <h2>取引に紐づかない領収書</h2>
         <div class="toolbar">
-          <label class="btn primary" style="cursor:${gdriveConfigured ? 'pointer' : 'not-allowed'};${gdriveConfigured ? '' : 'opacity:0.45'}">
+          ${gdriveConfigured ? `<label class="btn primary" style="cursor:pointer">
             ＋ 領収書を追加
-            <input type="file" id="expense-receipt-input" multiple style="display:none" ${gdriveConfigured ? '' : 'disabled'}>
-          </label>
+            <input type="file" id="expense-receipt-input" multiple style="display:none">
+          </label>` : ''}
           <span id="expense-upload-status" class="card-note" style="margin:0"></span>
           <span class="card-note" style="margin:0" id="expense-receipt-count"></span>
         </div>
@@ -62,7 +62,6 @@ export function render(container, ctx) {
         上のカード・現金の明細に紐づかない領収書は、ここにまとめてアップロードしておけます
         （科目の振り分けは税理士さんにお任せする前提の機能です）。
       </div>
-      ${gdriveConfigured ? '' : '<div class="card-note">Google Driveが未設定です。「設定」タブから連携すると、ここでアップロードできるようになります。</div>'}
       <div id="expense-receipt-list"></div>
     </div>
   `;
@@ -275,6 +274,9 @@ export function render(container, ctx) {
     const monthAttachments = listAttachments(year, month);
     const receiptsFor = (txnId) => monthAttachments.filter((a) => a.statement_transaction_id === txnId);
     const gdriveConfigured2 = !!getMeta('gdrive_client_id');
+    // Drive未連携なら領収書列そのものを出さない（未連携の案内はヘッダの通知で1回だけ伝えている）。
+    // ただし過去に上げた領収書が残っている月では、見えなくならないように列を残す。
+    const showReceiptColumn = gdriveConfigured2 || txns.some((t) => receiptsFor(t.id).length > 0);
 
     if (txns.length === 0) {
       slot.innerHTML = `<div class="card-note" style="margin:0">${monthLabel(year, month)}分の明細はまだありません。</div>`;
@@ -287,7 +289,7 @@ export function render(container, ctx) {
       <div class="bulk-table-wrap">
         <table class="ledger">
           <thead>
-            <tr><th>日付</th><th>利用店名・内容</th><th class="num">金額</th><th class="no-print">領収書</th><th class="no-print"></th></tr>
+            <tr><th>日付</th><th>利用店名・内容</th><th class="num">金額</th>${showReceiptColumn ? '<th class="no-print">領収書</th>' : ''}<th class="no-print"></th></tr>
           </thead>
           <tbody>
             ${txns.map((t) => `
@@ -295,13 +297,12 @@ export function render(container, ctx) {
                 <td>${escapeHtml(t.txn_date || '—')}</td>
                 <td class="desc">${escapeHtml(t.description)}</td>
                 <td class="num">${yen(t.amount)}</td>
-                <td class="no-print receipt-cell" data-txn-id="${t.id}" style="max-width:200px">
+                ${showReceiptColumn ? `<td class="no-print receipt-cell" data-txn-id="${t.id}" style="max-width:200px">
                   <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-                    <label class="btn ghost" style="cursor:${gdriveConfigured2 ? 'pointer' : 'not-allowed'};${gdriveConfigured2 ? '' : 'opacity:0.45'};font-size:11px;padding:4px 8px;white-space:nowrap;display:inline-block">
+                    ${gdriveConfigured2 ? `<label class="btn ghost" style="cursor:pointer;font-size:11px;padding:4px 8px;white-space:nowrap;display:inline-block">
                       ＋領収書
-                      <input type="file" class="txn-receipt-input" data-txn-id="${t.id}" style="display:none" ${gdriveConfigured2 ? '' : 'disabled'}>
-                    </label>
-                    ${gdriveConfigured2 ? '' : '<span class="upload-disabled-hint">Google Drive未接続。「設定」タブで接続してください。</span>'}
+                      <input type="file" class="txn-receipt-input" data-txn-id="${t.id}" style="display:none">
+                    </label>` : ''}
                     ${receiptsFor(t.id).map((it) => `
                       <span style="display:inline-flex;align-items:center;gap:2px">
                         ${fileChipHtml({ name: it.name, webViewLink: it.web_view_link })}
@@ -310,13 +311,13 @@ export function render(container, ctx) {
                     `).join('')}
                   </div>
                   <span class="txn-receipt-status card-note" style="margin:0;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" data-txn-id="${t.id}"></span>
-                </td>
+                </td>` : ''}
                 <td class="no-print"><button class="btn ghost delete-txn-btn" data-id="${t.id}">削除</button></td>
               </tr>
             `).join('')}
           </tbody>
           <tfoot>
-            <tr><td colspan="2">合計</td><td class="num">${yen(total)}</td><td class="no-print"></td><td class="no-print"></td></tr>
+            <tr><td colspan="2">合計</td><td class="num">${yen(total)}</td>${showReceiptColumn ? '<td class="no-print"></td>' : ''}<td class="no-print"></td></tr>
           </tfoot>
         </table>
       </div>
