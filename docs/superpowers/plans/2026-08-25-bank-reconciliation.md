@@ -1760,8 +1760,12 @@ import { decodeCsvBytes, parseCsvText, mapCsvRow, assignOccurrenceIndex, verifyR
     const slot = container.querySelector('#mapping-slot');
     const header = table[0];
     const previewRows = table.slice(0, 4);
+    // allowEmpty=true の項目は「（使わない）」を既定選択にする。末尾に追加するだけだと
+    // ブラウザの既定動作で先頭の列（日付列など）が誤って選択されたままになってしまうため
+    // （実装後の検証で発見。ユーザーが「金額の列」を使わず入金/出金の別列だけ使う場合、
+    // 未操作のセレクトが日付列を金額として誤認識し、全行が取込不能になるバグがあった）。
     const colOptions = (allowEmpty) => header.map((_, i) => `<option value="${i}">列${i + 1}: ${escapeHtml(header[i] || '')}</option>`).join('')
-      + (allowEmpty ? '<option value="">（使わない）</option>' : '');
+      + (allowEmpty ? '<option value="" selected>（使わない）</option>' : '');
 
     slot.innerHTML = `
       <div class="card-note">この口座は初めての取込です。どの列が何を表すか選んでください（次回から自動で使われます）。</div>
