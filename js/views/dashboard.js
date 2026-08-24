@@ -2,6 +2,7 @@ import {
   listClientsForMonths, computeArLedger, unpaidStreak, getRentUtilityEntry, computeUtilityPersonalTotal,
   getOfficerPayEntry, resolveOfficerDeductions, getMeta, getMonthStatus, getFoundingDate,
   listAttachments, listArEntriesForMonth, listExpenseSourceSummaries, setMonthFinalized,
+  getLastFinalizedAt,
 } from '../db.js';
 import {
   yen, yenSigned, monthLabel, escapeHtml, addMonths, todayYearMonth,
@@ -73,6 +74,7 @@ export function render(container, ctx) {
   const personalBurden = rentEntry ? (rentEntry.rent_personal_fixed + computeUtilityPersonalTotal(rentEntry)) : null;
   const netPay = netPayFor(year, month);
   const status = getMonthStatus(year, month);
+  const lastFinalizedAt = getLastFinalizedAt();
 
   // 今期の売上・入金累計（今期の各月の実績を合算。まだ来ていない月は実績0なので自然に足されない）
   const monthKeys = new Set(months.map((m) => `${m.year}-${m.month}`));
@@ -99,9 +101,16 @@ export function render(container, ctx) {
     { name: '家賃・光熱費', tab: 'rent', done: !!rentEntry, value: `個人負担 ${personalBurden == null ? '—' : `${yen(personalBurden)}円`}` },
     { name: '役員報酬', tab: 'officer', done: netPay != null, value: `差引 ${netPay == null ? '—' : `${yen(netPay)}円`}` },
     { name: '経費', tab: 'expenses', done: expenseTxnCount > 0 || expenseReceiptCount > 0, value: `明細${expenseTxnCount}件 ・ 領収書${expenseReceiptCount}件` },
+    { name: 'レポートを渡す', tab: 'report', done: !!(status && status.report_exported_at), value: status && status.report_exported_at ? '出力済み' : '未出力', ctaLabel: '月次レポートを開く' },
   ];
   const incomplete = sections.filter((section) => !section.done);
   const nextSection = incomplete[0];
+  const elapsedSinceFinalize = lastFinalizedAt
+    ? Math.max(0, Math.floor((Date.now() - new Date(lastFinalizedAt).getTime()) / 86400000))
+    : null;
+  const closingStatus = status && status.finalized
+    ? '確定済み'
+    : `未確定 ・ 残り${incomplete.length}項目${elapsedSinceFinalize == null ? '' : ` ・ 前回の締めから${elapsedSinceFinalize}日`}`;
 
   container.innerHTML = `
     <div id="month-bar-slot"></div>
@@ -109,7 +118,7 @@ export function render(container, ctx) {
       <div class="closing-grid">
         <section>
           <div class="closing-month">${monthLabel(year, month)}</div>
-          <div class="closing-status">${status && status.finalized ? '確定済み' : `未確定 ・ 残り${incomplete.length}項目`}</div>
+          <div class="closing-status">${closingStatus}</div>
           <div class="closing-checklist">
             ${sections.map((section) => `
               <div class="closing-row"><span class="completion-seal ${section.done ? 'done' : ''}"></span><span>${section.name}</span><strong class="num">${section.value}</strong></div>
@@ -118,7 +127,7 @@ export function render(container, ctx) {
           <div class="closing-actions">
             ${status && status.finalized
               ? '<span class="badge good">この月は確定済みです</span>'
-              : `${nextSection ? `<a class="btn primary" href="#/${nextSection.tab}">${nextSection.name}の入力を続ける</a>` : ''}<button class="btn ghost" id="dashboard-finalize-btn">この月を確定する</button>`}
+              : `${nextSection ? `<a class="btn primary" href="#/${nextSection.tab}">${nextSection.ctaLabel || `${nextSection.name}の入力を続ける`}</a>` : ''}<button class="btn ghost" id="dashboard-finalize-btn">この月を確定する</button>`}
           </div>
         </section>
         <section class="closing-figures">

@@ -1,7 +1,7 @@
 import {
   listClientsForMonth, listClientsForMonths, computeArLedger, getRentUtilityEntry, computeUtilityPersonalTotal,
   getOfficerPayEntry, resolveOfficerDeductions, getMeta, getMonthStatus, prevMonth,
-  listAttachments, removeAttachment, getClient, listExpenseSourceSummaries,
+  listAttachments, removeAttachment, getClient, listExpenseSourceSummaries, markReportExported,
 } from '../db.js';
 import {
   yen, monthLabel, escapeHtml, fiscalYearStartOf, fiscalYearMonths,
@@ -251,6 +251,7 @@ export function render(container, ctx) {
         }
       }
       window.print();
+      markReportExported(year, month);
     } finally {
       printBtn.disabled = false;
       printing = false;

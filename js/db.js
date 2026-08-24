@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS month_status (
   month INTEGER NOT NULL,
   finalized INTEGER NOT NULL DEFAULT 0,
   finalized_at TEXT,
+  report_exported_at TEXT,
   PRIMARY KEY(year, month)
 );
 
@@ -166,6 +167,7 @@ function migrateColumns() {
   ensureColumn('clients', 'trade_start_month', 'INTEGER');
   ensureColumn('clients', 'trade_end_year', 'INTEGER');
   ensureColumn('clients', 'trade_end_month', 'INTEGER');
+  ensureColumn('month_status', 'report_exported_at', 'TEXT');
 }
 
 export async function openDatabase() {
@@ -586,6 +588,21 @@ export function setMonthFinalized(year, month, finalized) {
      ON CONFLICT(year, month) DO UPDATE SET finalized=excluded.finalized, finalized_at=excluded.finalized_at`,
     [year, month, finalized ? 1 : 0, finalized ? new Date().toISOString() : null]
   );
+}
+
+export function markReportExported(year, month) {
+  run(
+    `INSERT INTO month_status (year, month, report_exported_at) VALUES (?, ?, ?)
+     ON CONFLICT(year, month) DO UPDATE SET report_exported_at=excluded.report_exported_at`,
+    [year, month, new Date().toISOString()]
+  );
+}
+
+export function getLastFinalizedAt() {
+  const row = one(
+    'SELECT finalized_at FROM month_status WHERE finalized = 1 ORDER BY finalized_at DESC LIMIT 1'
+  );
+  return row ? row.finalized_at : null;
 }
 
 /* ---------------- attachments (証憑: 領収書・請求書) ---------------- */

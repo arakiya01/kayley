@@ -138,7 +138,7 @@ export function render(container, ctx) {
   });
   container.querySelectorAll('#rent_total, #rent_personal_fixed, input[id$="_total"]').forEach(enableCurrencyInput);
 
-  function recomputeAndSave() {
+  function readEntry() {
     const entry = {
       year, month,
       rent_total: parseCurrencyInput(container.querySelector('#rent_total').value),
@@ -148,8 +148,10 @@ export function render(container, ctx) {
       entry[f.totalKey] = parseCurrencyInput(container.querySelector(`#${f.totalKey}`).value);
       entry[f.pctKey] = Number(container.querySelector(`#${f.pctKey}`).value) || 0;
     });
-    upsertRentUtilityEntry(entry);
+    return entry;
+  }
 
+  function updateDisplay(entry) {
     FIELDS.forEach((f) => {
       const personal = Math.round(entry[f.totalKey] * entry[f.pctKey] / 100);
       container.querySelector(`#${f.key}-personal`).textContent = yen(personal);
@@ -157,13 +159,22 @@ export function render(container, ctx) {
     const utilityPersonalTotal = computeUtilityPersonalTotal(entry);
     container.querySelector('#utility-personal-total').innerHTML = `${yen(utilityPersonalTotal)}<span class="unit">円</span>`;
     container.querySelector('#grand-personal-total').innerHTML = `${yen(utilityPersonalTotal + entry.rent_personal_fixed)}<span class="unit">円</span>`;
+  }
+
+  // タブを開いただけ（未入力）では保存しない。実際に値を変更したときだけ upsert する
+  // （そうしないと「済」チェックリストが未入力でも済扱いになってしまうため）。
+  function recomputeAndSave() {
+    const entry = readEntry();
+    upsertRentUtilityEntry(entry);
+    updateDisplay(entry);
     renderChart();
   }
 
   container.querySelectorAll('input').forEach((input) => {
     input.addEventListener('input', recomputeAndSave);
   });
-  recomputeAndSave();
+  updateDisplay(readEntry());
+  renderChart();
 
   function renderChart() {
     const months = fiscalYearMonths(fiscalYearStartOf(year, month, fyStartMonth), fyStartMonth);
