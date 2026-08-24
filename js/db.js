@@ -724,8 +724,8 @@ export function upsertOfficerPayEntry(e) {
     `INSERT INTO officer_pay_entries
        (year, month, gross_pay, health_insurance, nursing_care_insurance, pension,
         child_support_levy, withholding_tax, use_auto_deduction, manual_rent_deduction,
-        manual_utility_deduction, note)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        manual_utility_deduction, employer_insurance_total, note)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(year, month) DO UPDATE SET
        gross_pay=excluded.gross_pay,
        health_insurance=excluded.health_insurance,
@@ -736,11 +736,12 @@ export function upsertOfficerPayEntry(e) {
        use_auto_deduction=excluded.use_auto_deduction,
        manual_rent_deduction=excluded.manual_rent_deduction,
        manual_utility_deduction=excluded.manual_utility_deduction,
+       employer_insurance_total=excluded.employer_insurance_total,
        note=excluded.note`,
     [e.year, e.month, e.gross_pay || 0, e.health_insurance || 0, e.nursing_care_insurance || 0,
      e.pension || 0, e.child_support_levy || 0, e.withholding_tax || 0,
      e.use_auto_deduction ? 1 : 0, e.manual_rent_deduction || 0, e.manual_utility_deduction || 0,
-     e.note || null]
+     e.employer_insurance_total || 0, e.note || null]
   );
 }
 
