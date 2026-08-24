@@ -105,7 +105,15 @@ CREATE TABLE IF NOT EXISTS statement_transactions (
   txn_date TEXT,
   description TEXT NOT NULL,
   amount INTEGER NOT NULL DEFAULT 0,
+  account_title TEXT,
   note TEXT
+);
+
+CREATE TABLE IF NOT EXISTS account_rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  match_key TEXT NOT NULL UNIQUE,
+  account_title TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS theme_presets (
@@ -135,6 +143,19 @@ const DEFAULT_META = {
   theme_bg_image: '',
   theme_bg_image_target: 'background',
 };
+
+// 小規模法人でよく使う科目。ここに無いものは税理士側で振り替えてもらう前提で「雑費」に寄せる。
+export const ACCOUNT_TITLES = [
+  '通信費', '旅費交通費', '消耗品費', '新聞図書費', '会議費', '接待交際費',
+  '広告宣伝費', '支払手数料', '外注費', '水道光熱費', '荷造運賃', '修繕費',
+  '租税公課', '保険料', '諸会費', '雑費',
+];
+
+// 摘要から対応ルールのキーを作る。全角/半角ゆれと空白ゆれだけ吸収し、
+// 数字や日付は落とさない（落とすと別の店を同一視して誤爆する危険があるため）。
+export function accountMatchKey(description) {
+  return String(description || '').normalize('NFKC').replace(/\s+/g, ' ').trim().toLowerCase();
+}
 
 let SQL = null;
 let db = null;
@@ -168,6 +189,7 @@ function migrateColumns() {
   ensureColumn('clients', 'trade_end_year', 'INTEGER');
   ensureColumn('clients', 'trade_end_month', 'INTEGER');
   ensureColumn('month_status', 'report_exported_at', 'TEXT');
+  ensureColumn('statement_transactions', 'account_title', 'TEXT');
 }
 
 export async function openDatabase() {
@@ -198,6 +220,21 @@ function schedulePersist() {
   saveTimer = setTimeout(() => { persist(); }, 250);
 }
 
+// データが変わったことを画面側へ知らせる仕組み。
+// 完了印・締め残りの件数・通知はどの画面からの入力でも変わりうるが、
+// これまでは画面遷移するまで更新されなかったため、書き込みのたびに通知する。
+// 1回の操作で run() が何度も走ることがあるので、まとめて1回だけ呼ぶ。
+let changeListener = null;
+let notifyTimer = null;
+export function onDataChange(fn) {
+  changeListener = fn;
+}
+function scheduleNotify() {
+  if (!changeListener) return;
+  if (notifyTimer) clearTimeout(notifyTimer);
+  notifyTimer = setTimeout(() => { changeListener(); }, 120);
+}
+
 function all(sql, params = []) {
   const stmt = db.prepare(sql);
   stmt.bind(params);
@@ -215,6 +252,7 @@ function one(sql, params = []) {
 function run(sql, params = []) {
   db.run(sql, params);
   schedulePersist();
+  scheduleNotify();
 }
 
 export const Q = { all, one, run };
@@ -400,11 +438,88 @@ export function listExpenseSourceSummaries(months) {
   );
 }
 
-export function addStatementTransaction({ source_id, year, month, txn_date, description, amount, note }) {
+export function setTransactionAccountTitle(id, accountTitle) {
+  run('UPDATE statement_transactions SET account_title=? WHERE id=?', [accountTitle || null, id]);
+}
+
+export function learnAccountRule(description, accountTitle) {
+  if (!accountTitle) return;
+  const matchKey = accountMatchKey(description);
+  if (!matchKey) return;
   run(
-    `INSERT INTO statement_transactions (source_id, year, month, txn_date, description, amount, note)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [source_id, year, month, txn_date || null, description, amount || 0, note || null]
+    `INSERT INTO account_rules (match_key, account_title, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(match_key) DO UPDATE SET account_title=excluded.account_title, updated_at=excluded.updated_at`,
+    [matchKey, accountTitle, new Date().toISOString()]
+  );
+}
+
+export function getAccountRule(description) {
+  const matchKey = accountMatchKey(description);
+  if (!matchKey) return null;
+  const rule = one('SELECT account_title FROM account_rules WHERE match_key=?', [matchKey]);
+  return rule ? rule.account_title : null;
+}
+
+export function listAccountRules() {
+  return all('SELECT id, match_key, account_title, updated_at FROM account_rules ORDER BY updated_at DESC, id DESC');
+}
+
+export function removeAccountRule(id) {
+  run('DELETE FROM account_rules WHERE id=?', [id]);
+}
+
+export function applyAccountRulesToMonth(year, month) {
+  const rules = new Map(listAccountRules().map((r) => [r.match_key, r.account_title]));
+  const txns = all(
+    `SELECT id, description FROM statement_transactions
+     WHERE year=? AND month=? AND (account_title IS NULL OR account_title='')`,
+    [year, month]
+  );
+  let appliedCount = 0;
+  txns.forEach((txn) => {
+    const accountTitle = rules.get(accountMatchKey(txn.description));
+    if (!accountTitle) return;
+    setTransactionAccountTitle(txn.id, accountTitle);
+    appliedCount += 1;
+  });
+  return appliedCount;
+}
+
+export function listAllStatementTransactions(year, month) {
+  return all(
+    `SELECT t.*, p.name AS source_name, p.kind AS source_kind
+     FROM statement_transactions t
+     JOIN payment_sources p ON p.id=t.source_id
+     WHERE t.year=? AND t.month=?
+     ORDER BY p.sort_order, p.id, t.txn_date, t.id`,
+    [year, month]
+  );
+}
+
+export function listExpenseAccountSummaries(months) {
+  if (months.length === 0) return [];
+  const conditions = months.map(() => '(year=? AND month=?)').join(' OR ');
+  const params = months.flatMap((m) => [m.year, m.month]);
+  return all(
+    `SELECT COALESCE(NULLIF(account_title, ''), '未分類') AS account_title, year, month,
+            COUNT(id) AS transaction_count, COALESCE(SUM(amount), 0) AS total
+     FROM statement_transactions
+     WHERE ${conditions}
+     GROUP BY COALESCE(NULLIF(account_title, ''), '未分類'), year, month
+     ORDER BY year, month, account_title`,
+    params
+  );
+}
+
+export function addStatementTransaction(transaction) {
+  const { source_id, year, month, txn_date, description, amount, note } = transaction;
+  const accountTitle = Object.prototype.hasOwnProperty.call(transaction, 'account_title')
+    ? transaction.account_title
+    : getAccountRule(description);
+  run(
+    `INSERT INTO statement_transactions (source_id, year, month, txn_date, description, amount, account_title, note)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [source_id, year, month, txn_date || null, description, amount || 0, accountTitle || null, note || null]
   );
   return one('SELECT last_insert_rowid() AS id').id;
 }
@@ -588,7 +703,11 @@ export function getSectionCompletion(year, month) {
   const officerDone = !!getOfficerPayEntry(year, month);
   const attachments = listAttachments(year, month);
   const expenseRows = listExpenseSourceSummaries([{ year, month }]);
-  const expensesDone = expenseRows.length > 0 || attachments.some((a) => a.category !== 'invoice' && a.category !== 'statement');
+  const monthTxns = listAllStatementTransactions(year, month);
+  const hasUncategorized = monthTxns.some((t) => !t.account_title);
+  const hasExpenseData = expenseRows.length > 0 || attachments.some((a) => a.category !== 'invoice' && a.category !== 'statement');
+  // 完了印は入力済みではなく、科目まで決まり税理士に渡せる状態になったことを表す。
+  const expensesDone = hasExpenseData && !hasUncategorized;
   const status = getMonthStatus(year, month);
   const reportDone = !!(status && status.report_exported_at);
   return { ar: arDone, rent: rentDone, officer: officerDone, expenses: expensesDone, report: reportDone };

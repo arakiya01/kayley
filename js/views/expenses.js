@@ -7,6 +7,8 @@ import {
   getMeta, listAttachments, addAttachment, removeAttachment,
   listPaymentSources, upsertPaymentSource, archivePaymentSource,
   listStatementTransactions, addStatementTransaction, removeStatementTransaction, clearStatementTransactions,
+  ACCOUNT_TITLES, setTransactionAccountTitle, learnAccountRule, applyAccountRulesToMonth,
+  listAllStatementTransactions,
 } from '../db.js';
 import { yen, escapeHtml, monthLabel } from '../format.js';
 import * as gdrive from '../gdrive.js';
@@ -21,6 +23,8 @@ export function render(container, ctx) {
   const { year, month } = ctx;
   const gdriveConfigured = !!getMeta('gdrive_client_id');
   const sources = listPaymentSources();
+  applyAccountRulesToMonth(year, month);
+  const uncategorizedCount = listAllStatementTransactions(year, month).filter((t) => !t.account_title).length;
 
   container.innerHTML = `
     <div class="card">
@@ -39,6 +43,13 @@ export function render(container, ctx) {
           <div class="label">当月の経費合計</div>
           <div class="value num" id="expense-month-total">0<span class="unit">円</span></div>
         </div>
+        ${uncategorizedCount > 0 ? `
+          <div class="stat-tile">
+            <div class="label">未分類</div>
+            <div class="value num">${uncategorizedCount}<span class="unit">件</span></div>
+            <div class="card-note" style="margin:0">科目を選ぶと、次の月から同じ摘要に自動で当たります</div>
+          </div>
+        ` : ''}
       </div>
       <div id="add-source-form-slot"></div>
       ${sources.length === 0 ? `<div class="card-note" style="margin:0">まだ支払元が登録されていません。「＋ 支払元を追加」から、使っているカードや現金を登録してください。</div>` : ''}
@@ -59,8 +70,7 @@ export function render(container, ctx) {
         </div>
       </div>
       <div class="card-note">
-        上のカード・現金の明細に紐づかない領収書は、ここにまとめてアップロードしておけます
-        （科目の振り分けは税理士さんにお任せする前提の機能です）。
+        上のカード・現金の明細に紐づかない領収書は、ここにまとめてアップロードしておけます。
       </div>
       <div id="expense-receipt-list"></div>
     </div>
@@ -289,7 +299,7 @@ export function render(container, ctx) {
       <div class="bulk-table-wrap">
         <table class="ledger">
           <thead>
-            <tr><th>日付</th><th>利用店名・内容</th><th class="num">金額</th>${showReceiptColumn ? '<th class="no-print">領収書</th>' : ''}<th class="no-print"></th></tr>
+            <tr><th>日付</th><th>利用店名・内容</th><th class="num">金額</th><th class="account-cell">科目</th>${showReceiptColumn ? '<th class="no-print">領収書</th>' : ''}<th class="no-print"></th></tr>
           </thead>
           <tbody>
             ${txns.map((t) => `
@@ -297,6 +307,12 @@ export function render(container, ctx) {
                 <td>${escapeHtml(t.txn_date || '—')}</td>
                 <td class="desc">${escapeHtml(t.description)}</td>
                 <td class="num">${yen(t.amount)}</td>
+                <td class="account-cell">
+                  <select class="txn-account-select ${t.account_title ? '' : 'unassigned'}" data-txn-id="${t.id}">
+                    <option value="">未分類</option>
+                    ${ACCOUNT_TITLES.map((a) => `<option value="${escapeHtml(a)}" ${t.account_title === a ? 'selected' : ''}>${escapeHtml(a)}</option>`).join('')}
+                  </select>
+                </td>
                 ${showReceiptColumn ? `<td class="no-print receipt-cell" data-txn-id="${t.id}" style="max-width:200px">
                   <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
                     ${gdriveConfigured2 ? `<label class="btn ghost" style="cursor:pointer;font-size:11px;padding:4px 8px;white-space:nowrap;display:inline-block">
@@ -317,11 +333,27 @@ export function render(container, ctx) {
             `).join('')}
           </tbody>
           <tfoot>
-            <tr><td colspan="2">合計</td><td class="num">${yen(total)}</td>${showReceiptColumn ? '<td class="no-print"></td>' : ''}<td class="no-print"></td></tr>
+            <tr><td colspan="2">合計</td><td class="num">${yen(total)}</td><td class="account-cell"></td>${showReceiptColumn ? '<td class="no-print"></td>' : ''}<td class="no-print"></td></tr>
           </tfoot>
         </table>
       </div>
     `;
+
+    slot.querySelectorAll('.txn-account-select').forEach((sel) => {
+      sel.addEventListener('change', () => {
+        const txnId = Number(sel.dataset.txnId);
+        const value = sel.value;
+        const txn = txns.find((t) => t.id === txnId);
+        setTransactionAccountTitle(txnId, value);
+        // 同じ摘要は次の月も同じ科目になるので、対応を覚えて他の行にも即座に反映する。
+        if (value) {
+          learnAccountRule(txn.description, value);
+          applyAccountRulesToMonth(year, month);
+        }
+        // 未分類の件数はタブ上部のタイルにも出ているので、明細表だけでなく画面全体を描き直す
+        render(container, ctx);
+      });
+    });
 
     slot.querySelectorAll('.delete-txn-btn').forEach((btn) => {
       btn.addEventListener('click', () => {

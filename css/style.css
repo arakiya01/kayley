@@ -776,6 +776,12 @@ table.ledger td.desc { text-align: left; }
 .aging-strip { display:flex; align-items:center; gap:10px; margin-top:18px; padding-top:12px; border-top:1px solid var(--grid-line); text-decoration:none; color:inherit; }
 @media (max-width: 900px) { .closing-grid { grid-template-columns:1fr; } }
 
+/* 経費明細の科目セレクト。未分類は「まだ決めていない」ことが分かるように色を落とす。
+   台帳の他の列は右寄せだが、科目は支払元カードをまたいで位置が揃うよう左寄せにする */
+table.ledger th.account-cell, table.ledger td.account-cell { text-align: left; }
+.txn-account-select { font-size: 12px; padding: 4px 6px; max-width: 130px; }
+.txn-account-select.unassigned { color: var(--ink-muted); border-color: var(--status-warning); }
+
 /* empty states */
 .empty-state {
   text-align: center;

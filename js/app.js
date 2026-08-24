@@ -1,5 +1,5 @@
 import {
-  openDatabase, getMeta, getFoundingDate, exportBytes, getSectionCompletion, isMonthAllowed,
+  openDatabase, getMeta, getFoundingDate, exportBytes, getSectionCompletion, isMonthAllowed, onDataChange,
 } from './db.js';
 import { todayYearMonth, escapeHtml, monthLabel, addMonths } from './format.js';
 import { applyTheme } from './theme.js';
@@ -176,6 +176,12 @@ async function main() {
   if (!location.hash) location.hash = `#/${state.tab}`;
   renderShell();
   renderView();
+
+  // どの画面で入力しても、完了印・締めの残り件数・通知がその場で追いつくようにする。
+  // ヘッダだけを描き直すので、入力中のフォームからフォーカスが外れることはない。
+  onDataChange(() => {
+    if (document.getElementById('spine-top-slot')) renderProgressSpine();
+  });
 
   // すでにGoogle Driveに接続済み（同じタブ内で維持されているセッション）で、自動バックアップが
   // オンなら、前回から12時間以上経っていた場合だけ静かにバックアップする。新規にログイン画面は開かない。
