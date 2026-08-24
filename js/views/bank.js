@@ -1,11 +1,16 @@
 // 銀行タブ本体。口座の登録・CSV取込・明細一覧・手動でのリンク編集をここに集約する。
 // 銀行データは既存4タブ（売掛金・家賃・役員報酬・経費）のテーブルには一切書き込まない。
 // あくまで裏付け専用の読み取り層であり、ここで確定した内容は bank_transaction_links にのみ保存される。
-import { listBankAccounts, upsertBankAccount, archiveBankAccount, importBankTransactions, applyBankPayeeAliasesToAccount } from '../db.js';
-import { escapeHtml } from '../format.js';
+import {
+  listBankAccounts, upsertBankAccount, archiveBankAccount, importBankTransactions, applyBankPayeeAliasesToAccount,
+  listBankTransactions, listBankTransactionLinks, linkBankTransaction, unlinkBankTransaction, learnBankPayeeAlias,
+  officerWithholdingPeriodFor, derivePeriodForKind, IRREGULAR_CATEGORIES, listClients, listPaymentSources,
+} from '../db.js';
+import { escapeHtml, yen } from '../format.js';
 import { decodeCsvBytes, parseCsvText, mapCsvRow, assignOccurrenceIndex, verifyRunningBalance } from '../bankcsv.js';
 
 let openAccountId = null;
+let transactionFilter = 'all'; // 'all' | 'unlinked' | 'linked'
 
 export function render(container) {
   const accounts = listBankAccounts({ includeArchived: true });
@@ -106,6 +111,8 @@ export function render(container) {
       <div id="transaction-list-slot"></div>
     `;
 
+    renderTransactionList(accountId);
+
     slot.querySelector('#csv-file-input').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
@@ -190,6 +197,152 @@ export function render(container) {
   }
 
   function renderTransactionList(accountId) {
-    // Task 9 で実装する
+    const slot = container.querySelector('#transaction-list-slot');
+    const all = listBankTransactions(accountId);
+    const linksByTxn = new Map(all.map((t) => [t.id, listBankTransactionLinks(t.id)]));
+    const rows = all.filter((t) => {
+      const links = linksByTxn.get(t.id);
+      if (transactionFilter === 'unlinked') return links.length === 0;
+      if (transactionFilter === 'linked') return links.length > 0;
+      return true;
+    });
+    const clients = listClients({ includeArchived: true });
+
+    slot.innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <h2>明細</h2>
+          <div class="toolbar">
+            <select id="txn-filter">
+              <option value="all" ${transactionFilter === 'all' ? 'selected' : ''}>すべて</option>
+              <option value="unlinked" ${transactionFilter === 'unlinked' ? 'selected' : ''}>未分類</option>
+              <option value="linked" ${transactionFilter === 'linked' ? 'selected' : ''}>裏付け済み</option>
+            </select>
+          </div>
+        </div>
+        ${rows.length === 0 ? '<div class="card-note" style="margin:0">明細がありません。</div>' : `
+        <table class="ledger">
+          <thead><tr><th>日付</th><th>摘要</th><th class="num">金額</th><th>内訳</th></tr></thead>
+          <tbody>
+            ${rows.map((t) => {
+              const links = linksByTxn.get(t.id);
+              return `
+                <tr data-txn-id="${t.id}">
+                  <td>${escapeHtml(t.txn_date)}</td>
+                  <td class="desc">${escapeHtml(t.description)}</td>
+                  <td class="num">${t.amount >= 0 ? yen(t.amount) : `−${yen(Math.abs(t.amount))}`}</td>
+                  <td>${links.length > 0 ? linkSummaryHtml(links[0], clients) : `<button class="btn ghost link-btn" data-id="${t.id}">分類する</button>`}</td>
+                </tr>
+                <tr class="link-editor-row" data-editor-for="${t.id}" style="display:none"><td colspan="4"></td></tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+        `}
+      </div>
+    `;
+
+    slot.querySelector('#txn-filter').addEventListener('change', (e) => {
+      transactionFilter = e.target.value;
+      renderTransactionList(accountId);
+    });
+
+    slot.querySelectorAll('.link-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const txnId = Number(btn.dataset.id);
+        openLinkEditor(accountId, txnId, rows.find((r) => r.id === txnId), clients);
+      });
+    });
+
+    slot.querySelectorAll('.unlink-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        unlinkBankTransaction(Number(btn.dataset.linkId));
+        renderTransactionList(accountId);
+      });
+    });
+  }
+
+  function linkSummaryHtml(link, clients) {
+    const kindLabel = {
+      rent: '家賃', ar: '売掛金', officer_net: '役員報酬（手取り）',
+      officer_insurance: '役員報酬（社会保険料）', officer_withholding: '役員報酬（源泉所得税）',
+      expense_card: link.category ? `経費（${link.category}の引落）` : '経費（カード引落）',
+    }[link.kind] || (link.category || '不定型');
+    const clientName = link.kind === 'ar' && link.client_id ? (clients.find((c) => c.id === link.client_id)?.name || '') : '';
+    return `<span class="badge good">${escapeHtml(kindLabel)}${clientName ? `・${escapeHtml(clientName)}` : ''}</span> <button class="btn ghost unlink-btn" data-link-id="${link.id}">解除</button>`;
+  }
+
+  function openLinkEditor(accountId, txnId, txn, clients) {
+    const editorRow = container.querySelector(`tr[data-editor-for="${txnId}"]`);
+    if (!editorRow) return;
+    const [ty, tm] = txn.txn_date.split('-').map(Number);
+    const cell = editorRow.querySelector('td');
+    const cards = listPaymentSources({ includeArchived: true }).filter((s) => s.kind === 'card');
+    cell.innerHTML = `
+      <div class="field-row">
+        <div class="field-label">分類</div>
+        <div class="field-value">
+          <select id="link-kind-${txnId}">
+            <option value="rent">家賃</option>
+            <option value="ar">売掛金</option>
+            <option value="officer_net">役員報酬（手取り）</option>
+            <option value="officer_insurance">役員報酬（社会保険料）</option>
+            <option value="officer_withholding">役員報酬（源泉所得税）</option>
+            <option value="expense_card">経費（カードの引落）</option>
+            <option value="irregular">不定型</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-row" id="link-client-row-${txnId}" style="display:none">
+        <div class="field-label">得意先</div>
+        <div class="field-value">
+          <select id="link-client-${txnId}">${clients.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select>
+        </div>
+      </div>
+      <div class="field-row" id="link-category-row-${txnId}" style="display:none">
+        <div class="field-label">カテゴリ</div>
+        <div class="field-value">
+          <select id="link-category-${txnId}">${IRREGULAR_CATEGORIES.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+        </div>
+      </div>
+      <div class="field-row" id="link-card-row-${txnId}" style="display:none">
+        <div class="field-label">カード</div>
+        <div class="field-value">
+          <select id="link-card-${txnId}">${cards.map((c) => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('')}</select>
+        </div>
+        <div class="card-note" style="margin:0">経費タブは合否判定をしません。どのカードの引落か記録するだけの参考情報です。</div>
+      </div>
+      <div class="toolbar">
+        <span class="spacer"></span>
+        <button class="btn ghost" id="link-cancel-${txnId}">キャンセル</button>
+        <button class="btn primary" id="link-confirm-${txnId}">確定する</button>
+      </div>
+    `;
+    editorRow.style.display = '';
+
+    const kindSelect = cell.querySelector(`#link-kind-${txnId}`);
+    const updateVisibility = () => {
+      cell.querySelector(`#link-client-row-${txnId}`).style.display = kindSelect.value === 'ar' ? '' : 'none';
+      cell.querySelector(`#link-category-row-${txnId}`).style.display = kindSelect.value === 'irregular' ? '' : 'none';
+      cell.querySelector(`#link-card-row-${txnId}`).style.display = kindSelect.value === 'expense_card' ? '' : 'none';
+    };
+    kindSelect.addEventListener('change', updateVisibility);
+    updateVisibility();
+
+    cell.querySelector(`#link-cancel-${txnId}`).addEventListener('click', () => { editorRow.style.display = 'none'; });
+
+    cell.querySelector(`#link-confirm-${txnId}`).addEventListener('click', () => {
+      const kind = kindSelect.value;
+      const clientId = kind === 'ar' ? Number(cell.querySelector(`#link-client-${txnId}`).value) : null;
+      // category列は irregular のカテゴリ名と expense_card のカード名の両方の置き場として使う
+      // （新しい列を増やさず、既存の bank_transaction_links.category をそのまま再利用する）。
+      let category = null;
+      if (kind === 'irregular') category = cell.querySelector(`#link-category-${txnId}`).value;
+      if (kind === 'expense_card') category = cell.querySelector(`#link-card-${txnId}`)?.value || null;
+      const period = derivePeriodForKind(kind, ty, tm);
+      linkBankTransaction({ bank_transaction_id: txnId, kind, client_id: clientId, category, ...period });
+      learnBankPayeeAlias(txn.description, { kind, client_id: clientId, category });
+      renderTransactionList(accountId);
+    });
   }
 }

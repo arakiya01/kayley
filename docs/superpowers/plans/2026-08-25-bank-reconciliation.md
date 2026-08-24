@@ -1737,6 +1737,8 @@ import { decodeCsvBytes, parseCsvText, mapCsvRow, assignOccurrenceIndex, verifyR
       <div id="transaction-list-slot"></div>
     `;
 
+    renderTransactionList(accountId);
+
     slot.querySelector('#csv-file-input').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
