@@ -16,6 +16,18 @@ export function renderMonthBar(container, { year, month, onChange }) {
   const currentFyEarliest = foundingDate ? fiscalYearStartOf(foundingDate.year, foundingDate.month, fyStartMonth) : currentFy - 6;
   const periodLabel = foundingDate ? `第${fyStartYear - currentFyEarliest + 1}期` : `${monthLabel(fyStartYear, fyStartMonth)}〜`;
   const periodTitle = fiscalPeriodHeading(year, month, fyStartMonth, foundingDate);
+  const canGoPrevFy = fyStartYear > currentFyEarliest;
+  const canGoNextFy = fyStartYear < currentFy;
+
+  // 期を切り替えて、前の期なら最終月、次の期なら初月に着地する
+  // （期セレクタのプルダウン・ステッパー・月バー両端の矢印すべてで共通の挙動）
+  function goToFy(newFyStartYear) {
+    const newMonths = fiscalYearMonths(newFyStartYear, fyStartMonth);
+    const target = newFyStartYear < fyStartYear ? newMonths[11]
+      : newFyStartYear > fyStartYear ? newMonths[0]
+      : newMonths[currentIndex >= 0 ? currentIndex : 0];
+    onChange(target.year, target.month);
+  }
 
   container.innerHTML = `
     <div class="month-bar">
@@ -23,6 +35,7 @@ export function renderMonthBar(container, { year, month, onChange }) {
         <span>${periodLabel}</span>
         <span class="fy-toggle-caret">▾</span>
       </button>
+      <button type="button" class="fy-nav-btn" id="fy-prev" aria-label="前期へ" title="前期へ" ${canGoPrevFy ? '' : 'disabled'}>‹</button>
       <div class="status-strip">
         ${months.map((m, i) => {
           const allowed = isMonthAllowed(m.year, m.month);
@@ -46,6 +59,7 @@ export function renderMonthBar(container, { year, month, onChange }) {
           `;
         }).join('')}
       </div>
+      <button type="button" class="fy-nav-btn" id="fy-next" aria-label="翌期へ" title="翌期へ" ${canGoNextFy ? '' : 'disabled'}>›</button>
     </div>
     <div class="fy-panel" id="fy-panel">
       <div class="fy-panel-inner">
@@ -61,14 +75,7 @@ export function renderMonthBar(container, { year, month, onChange }) {
     noteText: '',
     maxFyStartYear: currentFy,
     showBadge: false,
-    onChange: (newFyStartYear) => {
-      const newMonths = fiscalYearMonths(newFyStartYear, fyStartMonth);
-      // 前の期に移動したら最終月、次の期に移動したら初月を選択する
-      const target = newFyStartYear < fyStartYear ? newMonths[11]
-        : newFyStartYear > fyStartYear ? newMonths[0]
-        : newMonths[currentIndex >= 0 ? currentIndex : 0];
-      onChange(target.year, target.month);
-    },
+    onChange: goToFy,
   });
 
   const fyToggle = container.querySelector('#fy-toggle');
@@ -77,6 +84,9 @@ export function renderMonthBar(container, { year, month, onChange }) {
     const open = fyPanel.classList.toggle('open');
     fyToggle.setAttribute('aria-expanded', String(open));
   });
+
+  if (canGoPrevFy) container.querySelector('#fy-prev').addEventListener('click', () => goToFy(fyStartYear - 1));
+  if (canGoNextFy) container.querySelector('#fy-next').addEventListener('click', () => goToFy(fyStartYear + 1));
 
   container.querySelectorAll('.status-strip .pill:not([disabled])').forEach((btn) => {
     btn.addEventListener('click', () => onChange(Number(btn.dataset.year), Number(btn.dataset.month)));

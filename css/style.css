@@ -194,12 +194,15 @@ nav.tabs a.active {
 .fy-toggle {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
   flex-shrink: 0;
+  height: 41px;
+  box-sizing: border-box;
   background: var(--card-raised);
   border: 1px solid var(--grid-line);
   border-radius: var(--radius);
-  padding: 8px 12px;
+  padding: 0 12px;
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 14px;
@@ -214,6 +217,26 @@ nav.tabs a.active {
 }
 .fy-toggle[aria-expanded="true"] { border-color: var(--hanko); color: var(--hanko); }
 .fy-toggle[aria-expanded="true"] .fy-toggle-caret { transform: rotate(180deg); color: var(--hanko); }
+
+.fy-nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 41px;
+  box-sizing: border-box;
+  background: var(--card-raised);
+  border: 1px solid var(--grid-line);
+  border-radius: var(--radius);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ink);
+  cursor: pointer;
+}
+.fy-nav-btn:hover:not(:disabled) { background: var(--hanko); color: #fff; border-color: var(--hanko); }
+.fy-nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
 .fy-panel {
   display: grid;
