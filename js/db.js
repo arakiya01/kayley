@@ -605,6 +605,18 @@ export function getRentUtilityEntry(year, month) {
   return one('SELECT * FROM rent_utility_entries WHERE year=? AND month=?', [year, month]);
 }
 
+// 指定月より前で、直近のデータがある月のエントリを探す（最大24ヶ月遡る）。
+// 見つからなければ null。戻り値は { entry, year, month }。
+export function findPreviousRentUtilityEntry(year, month) {
+  let target = { year, month };
+  for (let i = 0; i < 24; i++) {
+    target = prevMonth(target.year, target.month);
+    const entry = getRentUtilityEntry(target.year, target.month);
+    if (entry) return { entry, year: target.year, month: target.month };
+  }
+  return null;
+}
+
 export function upsertRentUtilityEntry(e) {
   run(
     `INSERT INTO rent_utility_entries
@@ -641,6 +653,18 @@ export function computeUtilityPersonalTotal(e) {
 
 export function getOfficerPayEntry(year, month) {
   return one('SELECT * FROM officer_pay_entries WHERE year=? AND month=?', [year, month]);
+}
+
+// 指定月より前で、直近のデータがある月のエントリを探す（最大24ヶ月遡る）。
+// 見つからなければ null。戻り値は { entry, year, month }。
+export function findPreviousOfficerPayEntry(year, month) {
+  let target = { year, month };
+  for (let i = 0; i < 24; i++) {
+    target = prevMonth(target.year, target.month);
+    const entry = getOfficerPayEntry(target.year, target.month);
+    if (entry) return { entry, year: target.year, month: target.month };
+  }
+  return null;
 }
 
 export function upsertOfficerPayEntry(e) {

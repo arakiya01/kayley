@@ -1,10 +1,14 @@
-import { getRentUtilityEntry, upsertRentUtilityEntry, computeUtilityPersonalTotal, getMeta, getFoundingDate } from '../db.js';
 import {
-  yen, monthShort, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading, todayYearMonth,
+  getRentUtilityEntry, findPreviousRentUtilityEntry, upsertRentUtilityEntry,
+  computeUtilityPersonalTotal, getMeta, getFoundingDate,
+} from '../db.js';
+import {
+  yen, monthLabel, monthShort, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading, todayYearMonth,
 } from '../format.js';
 import { renderFySelector } from './fyselector.js';
 import { enableGridPaste } from './gridpaste.js';
 import { lineChart } from '../charts.js';
+import { changeStrip } from '../changestrip.js';
 import { seriesColor } from '../colors.js';
 import { parseCurrencyInput, enableCurrencyInput } from '../currencyinput.js';
 
@@ -42,6 +46,7 @@ export function render(container, ctx) {
           <h2>家賃</h2>
           <div class="toolbar"><button class="btn ghost bulk-toggle-btn">📋 一括入力（年度）</button></div>
         </div>
+        <div id="carry-notice-slot"></div>
         <div class="card-note">全体の家賃実額と、個人負担分（固定額）を入力します。</div>
         <div class="field-row">
           <div class="field-label">家賃（全体・実額）</div>
@@ -92,14 +97,15 @@ export function render(container, ctx) {
     ${bulkMode ? `<div class="toolbar"><span class="spacer"></span><button class="btn ghost bulk-toggle-btn">月次入力に戻る</button></div>` : ''}
     <div id="bulk-slot"></div>
     <div class="card">
-      <h2>個人負担額の推移</h2>
-      <div class="card-note">${fiscalPeriodHeading(year, month, fyStartMonth, getFoundingDate())}</div>
-      <div id="rent-trend-chart"></div>
-    </div>
-    <div class="card">
       <h2>光熱費の推移</h2>
       <div class="card-note">水道・ガス・電気の個人負担額（円）・${fiscalPeriodHeading(year, month, fyStartMonth, getFoundingDate())}</div>
       <div id="utility-trend-chart"></div>
+    </div>
+    <div class="card">
+      <h2>家賃の変化</h2>
+      <div class="card-note" style="margin-bottom:2px">${fiscalPeriodHeading(year, month, fyStartMonth, getFoundingDate())}</div>
+      <div class="card-note">家賃は契約で固定のため、前月と同じ月は＝で示し、変わった月だけ差額を出しています。</div>
+      <div id="rent-trend-chart"></div>
     </div>
   `;
 
@@ -115,12 +121,30 @@ export function render(container, ctx) {
   }
 
   const existing = getRentUtilityEntry(year, month);
-  const state = existing ? { ...existing } : {
+  const previousEntry = existing ? null : findPreviousRentUtilityEntry(year, month);
+  let carriedFrom = previousEntry ? { year: previousEntry.year, month: previousEntry.month } : null;
+  const state = existing ? { ...existing } : previousEntry ? {
+    rent_total: previousEntry.entry.rent_total,
+    rent_personal_fixed: previousEntry.entry.rent_personal_fixed,
+    water_total: 0, water_personal_pct: previousEntry.entry.water_personal_pct,
+    gas_total: 0, gas_personal_pct: previousEntry.entry.gas_personal_pct,
+    electricity_total: 0, electricity_personal_pct: previousEntry.entry.electricity_personal_pct,
+  } : {
     rent_total: 0, rent_personal_fixed: 0,
     water_total: 0, water_personal_pct: defaultPct,
     gas_total: 0, gas_personal_pct: defaultPct,
     electricity_total: 0, electricity_personal_pct: defaultPct,
   };
+
+  if (carriedFrom) {
+    container.querySelector('#carry-notice-slot').innerHTML = `
+      <div class="carry-notice" id="carry-notice">
+        <span class="carry-notice-text">${monthLabel(carriedFrom.year, carriedFrom.month)}の家賃と按分率を引き継いでいます。光熱費の請求額は毎月変わるので入力してください。</span>
+        <button class="btn primary" id="carry-confirm-btn">この内容で確定する</button>
+      </div>`;
+    ['rent_total', 'rent_personal_fixed', ...FIELDS.map((f) => f.pctKey)]
+      .forEach((id) => container.querySelector(`#${id}`).classList.add('carried'));
+  }
 
   container.querySelector('#rent_total').value = state.rent_total;
   container.querySelector('#rent_personal_fixed').value = state.rent_personal_fixed;
@@ -158,6 +182,12 @@ export function render(container, ctx) {
   function recomputeAndSave() {
     const entry = readEntry();
     upsertRentUtilityEntry(entry);
+    if (carriedFrom) {
+      carriedFrom = null;
+      // 引き継ぎ状態が解けたので案内と薄字表示を消す（入力欄の値とフォーカスはそのまま）
+      container.querySelector('#carry-notice')?.remove();
+      container.querySelectorAll('.carried').forEach((el) => el.classList.remove('carried'));
+    }
     updateDisplay(entry);
     renderChart();
   }
@@ -165,30 +195,35 @@ export function render(container, ctx) {
   container.querySelectorAll('input').forEach((input) => {
     input.addEventListener('input', recomputeAndSave);
   });
+  container.querySelector('#carry-confirm-btn')?.addEventListener('click', recomputeAndSave);
   updateDisplay(readEntry());
   renderChart();
 
   function renderChart() {
     const months = fiscalYearMonths(fiscalYearStartOf(year, month, fyStartMonth), fyStartMonth);
     const highlightIndex = months.findIndex((m) => m.year === year && m.month === month);
-    const xLabels = months.map((m) => `${m.month}月`);
+    const xLabels = months.map((m) => monthShort(m.month));
+    const changeLabels = months.map((m) => monthLabel(m.year, m.month));
     const today = todayYearMonth();
     const todayIdx = today.year * 12 + today.month;
     const isFuture = (m) => m.year * 12 + m.month > todayIdx;
-    const rentSeries = [];
-    const utilitySeries = [];
+    const rentTotalSeries = [];
+    const rentPersonalSeries = [];
     months.forEach((m) => {
-      if (isFuture(m)) { rentSeries.push(null); utilitySeries.push(null); return; }
+      if (isFuture(m)) { rentTotalSeries.push(null); rentPersonalSeries.push(null); return; }
       const e = getRentUtilityEntry(m.year, m.month);
-      rentSeries.push(e ? e.rent_personal_fixed : 0);
-      utilitySeries.push(e ? computeUtilityPersonalTotal(e) : 0);
+      // 未入力の月は0ではなくデータなしとして扱う。0を入れてしまうと、
+      // 最初に実績が入った月が「0からの変化」として拾われてしまうため。
+      rentTotalSeries.push(e ? e.rent_total : null);
+      rentPersonalSeries.push(e ? e.rent_personal_fixed : null);
     });
-    lineChart(container.querySelector('#rent-trend-chart'), {
+    changeStrip(container.querySelector('#rent-trend-chart'), {
       xLabels,
+      fullLabels: changeLabels,
       highlightIndex,
-      series: [
-        { label: '家賃個人負担', color: seriesColor(0), values: rentSeries },
-        { label: '光熱費個人負担', color: seriesColor(1), values: utilitySeries },
+      rows: [
+        { label: '家賃（全体）', values: rentTotalSeries },
+        { label: '家賃（個人負担）', values: rentPersonalSeries },
       ],
     });
 

@@ -1,10 +1,12 @@
 import {
-  getOfficerPayEntry, upsertOfficerPayEntry, resolveOfficerDeductions, prevMonth, getMeta, getFoundingDate,
+  getOfficerPayEntry, findPreviousOfficerPayEntry, upsertOfficerPayEntry, resolveOfficerDeductions,
+  prevMonth, getMeta, getFoundingDate,
 } from '../db.js';
 import { yen, monthLabel, monthShort, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading, todayYearMonth } from '../format.js';
 import { renderFySelector } from './fyselector.js';
 import { enableGridPaste } from './gridpaste.js';
-import { lineChart, donutChart } from '../charts.js';
+import { donutChart } from '../charts.js';
+import { changeStrip } from '../changestrip.js';
 import { seriesColor } from '../colors.js';
 import { parseCurrencyInput, enableCurrencyInput } from '../currencyinput.js';
 
@@ -40,6 +42,7 @@ export function render(container, ctx) {
             <button class="btn ghost bulk-toggle-btn">📋 一括入力（年度）</button>
           </div>
         </div>
+        <div id="carry-notice-slot"></div>
         <div class="payslip-grid">
           <section>
             <div class="section-heading">支給</div>
@@ -73,8 +76,9 @@ export function render(container, ctx) {
       </div>
     </div>
     <div class="card">
-      <h2>支給額・差引支給額の推移</h2>
-      <div class="card-note">${fiscalPeriodHeading(year, month, fyStartMonth, getFoundingDate())}</div>
+      <h2>支給額の変化</h2>
+      <div class="card-note" style="margin-bottom:2px">${fiscalPeriodHeading(year, month, fyStartMonth, getFoundingDate())}</div>
+      <div class="card-note">役員報酬は定期同額給与のため、期の途中で支給額が変わるのは算定基礎届や改定のときだけです。前月と同じ月は＝で示し、変わった月だけ差額を出しています。</div>
       <div id="pay-trend-chart"></div>
     </div>
   `;
@@ -91,11 +95,30 @@ export function render(container, ctx) {
   }
 
   const existing = getOfficerPayEntry(year, month);
-  const state = existing ? { ...existing } : {
+  const previousEntry = existing ? null : findPreviousOfficerPayEntry(year, month);
+  let carriedFrom = previousEntry ? { year: previousEntry.year, month: previousEntry.month } : null;
+  const state = existing ? { ...existing } : previousEntry ? {
+    gross_pay: previousEntry.entry.gross_pay,
+    health_insurance: previousEntry.entry.health_insurance,
+    nursing_care_insurance: previousEntry.entry.nursing_care_insurance,
+    pension: previousEntry.entry.pension,
+    child_support_levy: previousEntry.entry.child_support_levy,
+    withholding_tax: previousEntry.entry.withholding_tax,
+    use_auto_deduction: 1, manual_rent_deduction: 0, manual_utility_deduction: 0,
+  } : {
     gross_pay: 0, health_insurance: 0, nursing_care_insurance: 0, pension: 0,
     child_support_levy: 0, withholding_tax: 0, use_auto_deduction: 1,
     manual_rent_deduction: 0, manual_utility_deduction: 0,
   };
+
+  if (carriedFrom) {
+    container.querySelector('#carry-notice-slot').innerHTML = `
+      <div class="carry-notice" id="carry-notice">
+        <span class="carry-notice-text">${monthLabel(carriedFrom.year, carriedFrom.month)}の内容を引き継いで表示しています。金額を確認してください。</span>
+        <button class="btn primary" id="carry-confirm-btn">この内容で確定する</button>
+      </div>`;
+    ['gross_pay', ...DEDUCTION_FIELDS.map((f) => f.key)].forEach((id) => container.querySelector(`#${id}`).classList.add('carried'));
+  }
 
   container.querySelector('#gross_pay').value = state.gross_pay;
   DEDUCTION_FIELDS.forEach((f) => { container.querySelector(`#${f.key}`).value = state[f.key]; });
@@ -117,6 +140,12 @@ export function render(container, ctx) {
     DEDUCTION_FIELDS.forEach((f) => { entry[f.key] = parseCurrencyInput(container.querySelector(`#${f.key}`).value); });
     upsertOfficerPayEntry(entry);
     container.querySelector('#manual-fields').style.display = useAuto ? 'none' : 'block';
+    if (carriedFrom) {
+      carriedFrom = null;
+      // 引き継ぎ状態が解けたので案内と薄字表示を消す（入力欄の値とフォーカスはそのまま）
+      container.querySelector('#carry-notice')?.remove();
+      container.querySelectorAll('.carried').forEach((el) => el.classList.remove('carried'));
+    }
     recompute(entry);
   }
 
@@ -148,6 +177,7 @@ export function render(container, ctx) {
   container.querySelectorAll('input').forEach((input) => {
     input.addEventListener('input', save);
   });
+  container.querySelector('#carry-confirm-btn')?.addEventListener('click', save);
 
   container.querySelector('#copy-prev-btn').addEventListener('click', () => {
     const p = getOfficerPayEntry(prev.year, prev.month);
@@ -161,7 +191,8 @@ export function render(container, ctx) {
   function renderChart() {
     const months = fiscalYearMonths(fiscalYearStartOf(year, month, fyStartMonth), fyStartMonth);
     const highlightIndex = months.findIndex((m) => m.year === year && m.month === month);
-    const xLabels = months.map((m) => `${m.month}月`);
+    const xLabels = months.map((m) => monthShort(m.month));
+    const changeLabels = months.map((m) => monthLabel(m.year, m.month));
     const today = todayYearMonth();
     const todayIdx = today.year * 12 + today.month;
     const grossSeries = [];
@@ -169,18 +200,22 @@ export function render(container, ctx) {
     months.forEach((m) => {
       if (m.year * 12 + m.month > todayIdx) { grossSeries.push(null); netSeries.push(null); return; }
       const e = getOfficerPayEntry(m.year, m.month);
+      // 未入力の月は0ではなくデータなしとして扱う。0を入れてしまうと、
+      // 最初に実績が入った月が「0からの変化」として拾われてしまうため。
+      if (!e) { grossSeries.push(null); netSeries.push(null); return; }
       const d = resolveOfficerDeductions(m.year, m.month);
-      const gross = e ? e.gross_pay : 0;
-      const total = e ? DEDUCTION_FIELDS.reduce((a, f) => a + (e[f.key] || 0), 0) + d.rent_deduction + d.utility_deduction : 0;
+      const gross = e.gross_pay;
+      const total = DEDUCTION_FIELDS.reduce((a, f) => a + (e[f.key] || 0), 0) + d.rent_deduction + d.utility_deduction;
       grossSeries.push(gross);
       netSeries.push(gross - total);
     });
-    lineChart(container.querySelector('#pay-trend-chart'), {
+    changeStrip(container.querySelector('#pay-trend-chart'), {
       xLabels,
+      fullLabels: changeLabels,
       highlightIndex,
-      series: [
-        { label: '支給額', color: seriesColor(1), values: grossSeries },
-        { label: '差引支給額', color: seriesColor(0), values: netSeries },
+      rows: [
+        { label: '支給額', values: grossSeries },
+        { label: '差引支給額', values: netSeries },
       ],
     });
   }

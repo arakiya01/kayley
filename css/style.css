@@ -783,6 +783,38 @@ table.ledger th.account-cell, table.ledger td.account-cell { text-align: left; }
 .txn-account-select.unassigned { color: var(--ink-muted); border-color: var(--status-warning); }
 
 /* empty states */
+.carry-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--hanko-wash);
+  border: 1px solid var(--hanko);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}
+.carry-notice-text { flex: 1; font-size: 12.5px; color: var(--ink-soft); min-width: 200px; }
+input.carried { border-style: dashed; border-color: var(--status-warning); color: var(--ink-soft); }
+
+/* 変化点ストリップ: 固定であるべき数字が「前月と同じか」だけを見せる */
+.change-strip { display: flex; flex-direction: column; gap: 18px; }
+.change-row-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.change-label { font-size: 13.5px; font-weight: 700; color: var(--ink); }
+.change-summary { font-size: 12px; color: var(--ink-muted); }
+.change-cells { display: flex; gap: 4px; flex-wrap: wrap; }
+.change-cell { flex: 1 1 62px; min-width: 62px; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 4px; border: 1px solid var(--grid-line); border-radius: var(--radius); background: var(--card-raised); }
+.change-cell .m { font-size: 10.5px; color: var(--ink-muted); }
+.change-cell .v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 12px; color: var(--ink); }
+.change-cell.same .v { color: var(--ink-muted); }
+.change-cell.none { opacity: 0.4; }
+.change-cell.none .v { color: var(--ink-muted); }
+.change-cell.diff { border-color: var(--status-warning); background: var(--card); }
+.change-cell.diff .v { color: var(--status-warning); font-weight: 700; }
+.change-cell.base .v { font-weight: 700; }
+.change-cell.current { box-shadow: 0 0 0 1.5px var(--hanko) inset; }
+
+/* empty states */
 .empty-state {
   text-align: center;
   padding: 48px 20px;
