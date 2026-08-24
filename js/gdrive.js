@@ -199,7 +199,7 @@ export async function uploadFile(file, { year, month, category = 'receipt', name
 }
 
 // バックアップ（DBファイルまるごと）は Kayley / バックアップ フォルダにまとめる。
-const BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24時間
+const BACKUP_INTERVAL_MS = 12 * 60 * 60 * 1000; // 12時間
 
 async function ensureBackupFolder() {
   const rootId = await ensureRootFolder();
@@ -218,7 +218,7 @@ export async function backupDatabase(bytes) {
 }
 
 // すでに接続済みの場合だけ動く（新たにログイン画面を開くことはしない＝予期しないポップアップを出さないため）。
-// 自動バックアップがオンで、前回から24時間以上経っていれば、その場でバックアップする。
+// 自動バックアップがオンで、前回から12時間以上経っていれば、その場でバックアップする。
 export async function maybeAutoBackup(exportBytesFn) {
   if (getMeta('gdrive_auto_backup') !== '1') return false;
   if (!isConnected()) return false;

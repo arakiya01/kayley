@@ -38,13 +38,11 @@ export function render(container, ctx) {
     <div id="single-month-slot" style="${bulkMode ? 'display:none' : ''}">
       <div class="rent-document-grid">
       <div class="card rent-card">
-        <h2>家賃</h2>
-        <div class="card-note">全体の家賃実額と、個人負担分（固定額）を入力します。</div>
-        <div class="toolbar">
-          <span class="spacer"></span>
-          <button class="btn ghost bulk-toggle-btn">📋 一括入力（年度）</button>
+        <div class="card-header">
+          <h2>家賃</h2>
+          <div class="toolbar"><button class="btn ghost bulk-toggle-btn">📋 一括入力（年度）</button></div>
         </div>
-        <div class="rent-fields-grid">
+        <div class="card-note">全体の家賃実額と、個人負担分（固定額）を入力します。</div>
         <div class="field-row">
           <div class="field-label">家賃（全体・実額）</div>
           <div class="field-value">
@@ -58,7 +56,6 @@ export function render(container, ctx) {
             <input type="text" inputmode="numeric" class="currency-input" id="rent_personal_fixed">
             <span class="field-suffix">円</span>
           </div>
-        </div>
         </div>
       </div>
       <div class="card utility-card">

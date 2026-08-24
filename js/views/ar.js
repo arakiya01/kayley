@@ -30,13 +30,14 @@ export function render(container, ctx) {
 
   container.innerHTML = `
     <div class="card">
-      <h2>売掛金台帳</h2>
-      <div class="card-note">得意先ごとの当月売上・入金を記録します。残高は自動で繰り越し計算されます。</div>
-      <div class="toolbar">
-        <span class="spacer"></span>
-        <button class="btn ghost" id="add-client-btn">＋ 得意先を追加</button>
-        <button class="btn ghost" id="bulk-toggle-btn">${bulkMode ? '月次入力に戻る' : '📋 一括入力（年度）'}</button>
+      <div class="card-header">
+        <h2>売掛金台帳</h2>
+        <div class="toolbar">
+          <button class="btn ghost" id="add-client-btn">＋ 得意先を追加</button>
+          <button class="btn ghost" id="bulk-toggle-btn">${bulkMode ? '月次入力に戻る' : '📋 一括入力（年度）'}</button>
+        </div>
       </div>
+      <div class="card-note">得意先ごとの当月売上・入金を記録します。残高は自動で繰り越し計算されます。</div>
       <div id="ar-table-slot"></div>
     </div>
     <div class="card">

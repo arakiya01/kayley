@@ -49,8 +49,9 @@ function renderShell() {
   const root = document.getElementById('app-shell');
   root.innerHTML = `
     <header class="progress-spine" id="progress-spine">
-      <div id="spine-content"></div>
+      <div id="spine-top-slot"></div>
       <div id="month-bar-slot"></div>
+      <nav class="workflow-tabs" id="workflow-tabs-slot"></nav>
     </header>
     <div id="view-root"></div>
   `;
@@ -67,17 +68,19 @@ function renderProgressSpine() {
     { key: 'report', label: '月次レポート', done: completion.report },
   ];
   const remaining = steps.filter((step) => !step.done).length;
-  document.getElementById('spine-content').innerHTML = `
+  document.getElementById('spine-top-slot').innerHTML = `
     <div class="spine-top">
-      <a class="wordmark-link" href="#/dashboard"><span class="display">Kayley</span><small>SOLO BOOKKEEPING</small></a>
-      <span class="spine-company">${companyName ? escapeHtml(companyName) : '<a href="#/settings">会社名を設定する</a>'}</span>
+      <div class="wordmark-link">
+        <a href="#/dashboard" class="display">Kayley</a>
+        ${companyName ? `<small>${escapeHtml(companyName)}</small>` : '<small><a href="#/settings">会社名を設定する</a></small>'}
+      </div>
       <span class="spine-divider"></span>
       <a class="utility-link ${state.tab === 'settings' ? 'active' : ''}" href="#/settings">設定</a>
     </div>
-    <nav class="workflow-tabs">
-      ${steps.map((step) => `<a href="#/${step.key}" class="workflow-step ${state.tab === step.key ? 'active' : ''}"><span class="completion-seal ${step.done ? 'done' : ''}"></span>${step.label}</a>`).join('')}
-      ${remaining > 0 ? `<span class="workflow-hint">あと${remaining}つで締められます</span>` : ''}
-    </nav>
+  `;
+  document.getElementById('workflow-tabs-slot').innerHTML = `
+    ${steps.map((step) => `<a href="#/${step.key}" class="workflow-step ${state.tab === step.key ? 'active' : ''}"><span class="completion-seal ${step.done ? 'done' : ''}"></span>${step.label}</a>`).join('')}
+    ${remaining > 0 ? `<span class="workflow-hint">あと${remaining}つで締められます</span>` : ''}
   `;
 }
 
@@ -129,7 +132,7 @@ async function main() {
   renderView();
 
   // すでにGoogle Driveに接続済み（同じタブ内で維持されているセッション）で、自動バックアップが
-  // オンなら、前回から24時間以上経っていた場合だけ静かにバックアップする。新規にログイン画面は開かない。
+  // オンなら、前回から12時間以上経っていた場合だけ静かにバックアップする。新規にログイン画面は開かない。
   gdrive.maybeAutoBackup(exportBytes);
 }
 

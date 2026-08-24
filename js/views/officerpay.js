@@ -33,10 +33,12 @@ export function render(container, ctx) {
     <div id="bulk-slot"></div>
     <div id="single-month-slot" style="${bulkMode ? 'display:none' : ''}">
       <div class="card payslip">
-        <div class="payslip-header"><h2>役員報酬明細</h2><span>${monthLabel(year, month)}</span></div>
-        <div class="toolbar">
-          <span class="spacer"></span>
-          <button class="btn ghost bulk-toggle-btn">📋 一括入力（年度）</button>
+        <div class="payslip-header">
+          <h2>役員報酬明細</h2>
+          <div class="toolbar">
+            <span>${monthLabel(year, month)}</span>
+            <button class="btn ghost bulk-toggle-btn">📋 一括入力（年度）</button>
+          </div>
         </div>
         <div class="payslip-grid">
           <section>

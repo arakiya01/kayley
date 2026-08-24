@@ -167,10 +167,10 @@ nav.tabs a.active {
 
 .progress-spine { padding:26px 4px 16px; margin-bottom:24px; border-bottom:3px double var(--grid-line); }
 .spine-top { display:flex; align-items:center; gap:14px; min-height:38px; }
-.wordmark-link { display:flex; align-items:baseline; gap:12px; text-decoration:none; margin-right:auto; }
-.wordmark-link .display { font-size:28px; }
-.wordmark-link small { font-size:11px; color:var(--ink-muted); letter-spacing:.12em; }
-.spine-company { font-size:13px; color:var(--ink-soft); }
+.wordmark-link { display:flex; align-items:baseline; gap:12px; margin-right:auto; }
+.wordmark-link a.display { font-size:28px; text-decoration:none; }
+.wordmark-link small { font-size:12.5px; color:var(--ink-soft); }
+.wordmark-link small a { color:var(--ink-soft); }
 .spine-divider { width:1px; height:18px; background:var(--grid-line); }
 .utility-link { text-decoration:none; color:var(--ink-soft); font-size:13px; padding:3px 2px; }
 .utility-link.active { color:var(--ink); font-weight:700; }
@@ -185,6 +185,7 @@ nav.tabs a.active {
   display: flex;
   align-items: flex-start;
   gap: 16px;
+  margin-top: 14px;
   margin-bottom: 0;
   font-size: 14px;
 }
@@ -231,10 +232,21 @@ nav.tabs a.active {
   margin-bottom: 20px;
 }
 
-.card > h2 {
+.card h2 {
   font-size: 18px;
   margin-bottom: 4px;
 }
+
+/* カードタイトルの右側にそのカードの主要操作ボタンを並べる共通レイアウト */
+.card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.card-header h2 { margin-bottom: 0; }
+.card-header .toolbar { margin: 0; }
 
 .card .card-note {
   font-size: 12.5px;
@@ -611,6 +623,7 @@ table.ledger td.desc { text-align: left; }
 .compact-source-row .cash-txn-form-slot { flex-basis: 100%; }
 .payslip-header { display:flex; justify-content:space-between; align-items:baseline; padding-bottom:12px; border-bottom:3px double var(--grid-line); }
 .payslip-header span { color:var(--ink-muted); font-family:var(--font-mono); }
+.payslip-header .toolbar { margin:0; }
 .payslip-grid { display:grid; grid-template-columns:1fr 1fr; gap:36px; margin-top:16px; }
 .section-heading { font-family:var(--font-display); font-weight:700; padding-bottom:5px; margin-bottom:5px; border-bottom:1px solid var(--grid-line); }
 .compact-field { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:5px 0; }
@@ -627,17 +640,13 @@ table.ledger td.desc { text-align: left; }
 .net-pay-line strong { display:block; font-size:30px; line-height:1.25; text-align:right; }
 .net-pay-line .unit, .computed-line .unit { font-size:11px; margin-left:3px; color:var(--ink-muted); }
 @media (max-width: 900px) { .payslip-grid { grid-template-columns:1fr; gap:20px; } }
-.rent-document-grid { display:grid; grid-template-columns:1fr 1fr; grid-template-areas:"rent summary" "utility utility"; gap:20px; margin-bottom:20px; }
+.rent-document-grid { display:grid; grid-template-columns:1fr 1fr; grid-template-areas:"rent utility" "summary summary"; gap:20px; margin-bottom:20px; }
 .rent-document-grid .card { margin-bottom:0; }
 .rent-card { grid-area:rent; }
 .utility-card { grid-area:utility; }
 .rent-summary-card { grid-area:summary; }
-.rent-fields-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-.rent-fields-grid .field-row { display:block; border-bottom:0; padding-bottom:0; }
-.rent-fields-grid .field-label { max-width:none; min-height:40px; margin-bottom:5px; }
 @media (max-width: 900px) {
   .rent-document-grid { grid-template-columns:1fr; grid-template-areas:"rent" "utility" "summary"; }
-  .rent-fields-grid { grid-template-columns:1fr; }
 }
 .closing-grid { display:grid; grid-template-columns:1.3fr 1fr; gap:32px; }
 .closing-month { font-family:var(--font-display); font-size:28px; font-weight:700; }

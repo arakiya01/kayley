@@ -205,15 +205,16 @@ export function render(container, ctx) {
     </div>
 
     <div class="card">
-      <h2>証憑（領収書・請求書）</h2>
+      <div class="card-header">
+        <h2>証憑（領収書・請求書）</h2>
+        <div class="toolbar no-print">
+          <button class="btn ghost" id="load-previews-btn">画像・PDFを読み込んで表示</button>
+          <span id="preview-status" class="card-note" style="margin:0"></span>
+        </div>
+      </div>
       <div class="card-note no-print">
         請求書は売掛金タブの各得意先から、領収書は「経費」タブからアップロードできます。
         「読み込んで表示」を押すと、Googleドライブから中身を取得してこのレポートに埋め込みます（PDF出力にもそのまま含まれます）。
-      </div>
-      <div class="toolbar no-print">
-        <span class="spacer"></span>
-        <button class="btn ghost" id="load-previews-btn">画像・PDFを読み込んで表示</button>
-        <span id="preview-status" class="card-note" style="margin:0"></span>
       </div>
       <div id="attachment-list"></div>
     </div>

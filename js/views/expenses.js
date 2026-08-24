@@ -24,7 +24,12 @@ export function render(container, ctx) {
 
   container.innerHTML = `
     <div class="card">
-      <h2>支払元（カード・現金）</h2>
+      <div class="card-header">
+        <h2>支払元（カード・現金）</h2>
+        <div class="toolbar">
+          <button class="btn ghost" id="add-source-btn">＋ 支払元を追加</button>
+        </div>
+      </div>
       <div class="card-note">
         カードの利用明細（PDF）をアップロードすると、1件ずつの取引に自動で展開します。
         現金の利用はまれだと思うので、手入力で追加できます。
@@ -35,10 +40,6 @@ export function render(container, ctx) {
           <div class="value num" id="expense-month-total">0<span class="unit">円</span></div>
         </div>
       </div>
-      <div class="toolbar">
-        <span class="spacer"></span>
-        <button class="btn ghost" id="add-source-btn">＋ 支払元を追加</button>
-      </div>
       <div id="add-source-form-slot"></div>
       ${sources.length === 0 ? `<div class="card-note" style="margin:0">まだ支払元が登録されていません。「＋ 支払元を追加」から、使っているカードや現金を登録してください。</div>` : ''}
     </div>
@@ -46,19 +47,20 @@ export function render(container, ctx) {
     <div id="sources-slot"></div>
 
     <div class="card">
-      <h2>取引に紐づかない領収書</h2>
+      <div class="card-header">
+        <h2>取引に紐づかない領収書</h2>
+        <div class="toolbar">
+          <label class="btn primary" style="cursor:${gdriveConfigured ? 'pointer' : 'not-allowed'};${gdriveConfigured ? '' : 'opacity:0.45'}">
+            ＋ 領収書を追加
+            <input type="file" id="expense-receipt-input" multiple style="display:none" ${gdriveConfigured ? '' : 'disabled'}>
+          </label>
+          <span id="expense-upload-status" class="card-note" style="margin:0"></span>
+          <span class="card-note" style="margin:0" id="expense-receipt-count"></span>
+        </div>
+      </div>
       <div class="card-note">
         上のカード・現金の明細に紐づかない領収書は、ここにまとめてアップロードしておけます
         （科目の振り分けは税理士さんにお任せする前提の機能です）。
-      </div>
-      <div class="toolbar">
-        <label class="btn primary" style="cursor:${gdriveConfigured ? 'pointer' : 'not-allowed'};${gdriveConfigured ? '' : 'opacity:0.45'}">
-          ＋ 領収書を追加
-          <input type="file" id="expense-receipt-input" multiple style="display:none" ${gdriveConfigured ? '' : 'disabled'}>
-        </label>
-        <span id="expense-upload-status" class="card-note" style="margin:0"></span>
-        <span class="spacer"></span>
-        <span class="card-note" style="margin:0" id="expense-receipt-count"></span>
       </div>
       ${gdriveConfigured ? '' : '<div class="card-note">Google Driveが未設定です。「設定」タブから連携すると、ここでアップロードできるようになります。</div>'}
       <div id="expense-receipt-list"></div>
