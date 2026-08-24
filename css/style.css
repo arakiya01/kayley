@@ -512,7 +512,12 @@ input[type="number"], input[type="text"], select {
   width: 100%;
 }
 input[type="text"] { font-family: var(--font-body); font-variant-numeric: normal; }
-input.currency-input { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+input[type="number"],
+input.currency-input {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
 input:focus, select:focus, button:focus-visible {
   outline: 2px solid var(--hanko);
   outline-offset: 1px;
