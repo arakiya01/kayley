@@ -168,10 +168,14 @@ nav.tabs a.active {
 /* month picker */
 .month-bar {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 16px;
   margin-bottom: 24px;
   font-size: 14px;
+}
+.month-bar-main {
+  flex: 1;
+  min-width: 0;
 }
 
 .stepper {
@@ -201,77 +205,13 @@ nav.tabs a.active {
 .stepper button.step:disabled { opacity: 0.3; cursor: not-allowed; }
 .stepper button.step:disabled:hover { background: var(--card-raised); color: var(--ink); border-color: var(--grid-line); }
 
-.month-bar .current-month {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 17px;
-  min-width: 8em;
-  text-align: center;
-  padding: 4px 8px;
-  border-radius: 2px;
-  color: var(--ink);
-}
-.month-bar .current-month:hover { background: var(--card); }
-
-.month-popover {
-  display: none;
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  z-index: 30;
-  background: var(--card-raised);
-  border: 1px solid var(--grid-line);
-  border-radius: var(--radius);
-  box-shadow: 0 6px 24px rgba(34,52,74,0.14);
-  padding: 14px;
-  width: 260px;
-}
-.month-popover.open { display: block; }
-
-.popover-year-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-.popover-year-row .btn { padding: 4px 10px; }
-.popover-year-label {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 15px;
-}
-
-.popover-month-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-}
-.popover-month-btn {
-  border: 1px solid var(--grid-line);
-  background: var(--card);
-  color: var(--ink);
-  border-radius: 2px;
-  padding: 8px 4px;
-  font-size: 13px;
-  cursor: pointer;
-  font-family: var(--font-mono);
-}
-.popover-month-btn:hover { border-color: var(--ink-soft); }
-.popover-month-btn.selected {
-  background: var(--ink);
-  color: #fff;
-  border-color: var(--ink);
-}
-.popover-month-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
 .finalize-badge {
   margin-left: auto;
+  margin-top: 6px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 /* ---------- cards / sections ---------- */
@@ -301,6 +241,51 @@ nav.tabs a.active {
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   gap: 16px;
 }
+
+/* ダッシュボード: 2枚のカードを横に並べる（ナロー画面では縦積みに戻る）。
+   中身の量が違っても縦幅が揃うよう、行内で高さを揃えてカード自体もflex化する。 */
+.two-col {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 20px;
+  align-items: stretch;
+}
+.two-col > .card {
+  display: flex;
+  flex-direction: column;
+}
+@media (max-width: 900px) {
+  .two-col { grid-template-columns: 1fr; }
+}
+
+/* ダッシュボード: 月次確定状況ストリップ */
+.status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.status-strip .pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 46px;
+  padding: 7px 4px 6px;
+  border-radius: var(--radius);
+  border: 1px solid var(--grid-line);
+  background: var(--card-raised);
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.status-strip .pill:hover:not(:disabled) { border-color: var(--hanko); }
+.status-strip .pill.current { box-shadow: 0 0 0 1.5px var(--hanko) inset; }
+.status-strip .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-muted); }
+.status-strip .pill.good .dot { background: var(--status-good); }
+.status-strip .pill.warning .dot { background: var(--status-warning); }
+.status-strip .pill.future { opacity: 0.55; }
+.status-strip .pill.disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* stat tiles */
 .stat-tile {
@@ -388,15 +373,17 @@ table.bulk-grid input[type="number"] {
 /* ---------- forms ---------- */
 
 .field-row {
-  display: grid;
-  grid-template-columns: minmax(160px, 1fr) repeat(auto-fit, minmax(120px, 1fr));
-  gap: 10px 14px;
+  display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
   padding: 8px 0;
   border-bottom: 1px solid var(--hairline);
 }
 .field-row:last-child { border-bottom: none; }
 .field-row .field-label {
+  flex: 0 0 200px;
+  max-width: 200px;
   font-size: 13.5px;
   color: var(--ink-soft);
 }
@@ -405,6 +392,38 @@ table.bulk-grid input[type="number"] {
   font-size: 11px;
   color: var(--ink-muted);
   margin-top: 2px;
+}
+/* 各field-rowの「値」側をひとまとめにすることで、field-labelの幅を全行で
+   固定にしても、複数入力・サフィックス混在の行が崩れないようにする */
+.field-row .field-value {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.field-row .field-value input[type="number"] {
+  width: auto;
+  flex: 0 1 160px;
+  max-width: 200px;
+  min-width: 0;
+}
+.field-row .field-value input[type="text"] {
+  width: auto;
+  flex: 1 1 220px;
+  max-width: 420px;
+  min-width: 0;
+}
+.field-row .field-value select {
+  width: auto;
+  flex: 0 1 200px;
+  max-width: 260px;
+  min-width: 0;
+}
+.field-row .field-value .field-suffix {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 input[type="number"], input[type="text"], select {
@@ -429,6 +448,23 @@ input.computed {
 }
 
 .field-suffix { font-size: 12px; color: var(--ink-muted); }
+
+/* file-chip: 添付ファイルをアイコン1つで表す（ホバーでファイル名） */
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  border: 1px solid var(--grid-line);
+  background: var(--card-raised);
+  color: var(--ink-soft);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+a.file-chip:hover { color: var(--hanko); border-color: var(--hanko); background: var(--card); }
+span.file-chip { cursor: default; }
 
 /* buttons */
 .btn {
@@ -574,7 +610,8 @@ input.computed {
 @media (max-width: 720px) {
   #app-shell { padding: 0 14px 60px; }
   .masthead { flex-direction: column; align-items: flex-start; }
-  .field-row { grid-template-columns: 1fr; }
+  .field-row { flex-direction: column; align-items: stretch; }
+  .field-row .field-label { flex-basis: auto; max-width: none; }
   table.ledger { font-size: 12px; }
 }
 
@@ -584,13 +621,38 @@ input.computed {
   * { transition-duration: 0.001ms !important; }
 }
 
+/* ---------- io mask (出力中などに操作をブロックする全画面オーバーレイ) ---------- */
+
+.io-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(34, 52, 74, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: wait;
+}
+.io-mask-box {
+  background: var(--card);
+  border: 1px solid var(--grid-line);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+  padding: 18px 30px;
+  font-size: 14px;
+  color: var(--ink);
+  max-width: 320px;
+  text-align: center;
+}
+
 /* ---------- print (monthly report → PDF) ---------- */
 
 @media print {
   body { background: #fff !important; background-image: none !important; }
-  nav.tabs, .toolbar, .no-print, .stepper button { display: none !important; }
+  .masthead, nav.tabs, .toolbar, .no-print, .stepper button { display: none !important; }
   #app-shell { max-width: none; padding: 0; margin: 0; }
-  .card { box-shadow: none; border: 1px solid #999; break-inside: avoid; }
+  .card { background: #fff; box-shadow: none; border: 1px solid #999; break-inside: avoid; }
   a { text-decoration: none; color: inherit; }
+  .io-mask { display: none !important; }
   @page { size: A4; margin: 14mm; }
 }

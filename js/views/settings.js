@@ -1,6 +1,7 @@
 import {
   getMeta, setMeta, listClients, upsertClient, archiveClient, exportBytes, importBytes,
   listThemePresets, addThemePreset, removeThemePreset,
+  listPaymentSources, archivePaymentSource,
 } from '../db.js';
 import { Storage } from '../storage.js';
 import { escapeHtml } from '../format.js';
@@ -22,6 +23,7 @@ export function render(container) {
   const foundingMonth = getMeta('founding_month') || '';
   const thisYear = new Date().getFullYear();
   const clients = listClients({ includeArchived: true });
+  const paymentSources = listPaymentSources({ includeArchived: true });
   const gdriveClientId = getMeta('gdrive_client_id') || '';
   const gdriveConnected = gdrive.isConnected();
   const showClientIdField = showClientIdOverride || !gdriveClientId;
@@ -51,44 +53,83 @@ export function render(container) {
       <h2>会社情報</h2>
       <div class="field-row">
         <div class="field-label">会社名</div>
-        <input type="text" id="company_name" value="${escapeHtml(companyName)}">
+        <div class="field-value"><input type="text" id="company_name" value="${escapeHtml(companyName)}"></div>
       </div>
       <div class="field-row">
         <div class="field-label">創業年月<span class="hint">この年月より前は記帳できないようにします（未設定なら制限なし）</span></div>
-        <input type="number" id="founding_year" placeholder="例: 2024" value="${escapeHtml(foundingYear)}" min="1990" max="${thisYear + 1}">
-        <select id="founding_month">
-          <option value="">月を選択</option>
-          ${Array.from({ length: 12 }, (_, i) => i + 1).map((m) => `<option value="${m}" ${String(m) === String(foundingMonth) ? 'selected' : ''}>${m}月</option>`).join('')}
-        </select>
+        <div class="field-value">
+          <input type="number" id="founding_year" placeholder="例: 2024" value="${escapeHtml(foundingYear)}" min="1990" max="${thisYear + 1}">
+          <select id="founding_month">
+            <option value="">月を選択</option>
+            ${Array.from({ length: 12 }, (_, i) => i + 1).map((m) => `<option value="${m}" ${String(m) === String(foundingMonth) ? 'selected' : ''}>${m}月</option>`).join('')}
+          </select>
+        </div>
       </div>
       <div class="field-row">
         <div class="field-label">会計年度の開始月<span class="hint">ダッシュボードの年度累計に使用</span></div>
-        <select id="fy_start">
-          ${Array.from({ length: 12 }, (_, i) => i + 1).map((m) => `<option value="${m}" ${String(m) === String(fyStart) ? 'selected' : ''}>${m}月</option>`).join('')}
-        </select>
+        <div class="field-value">
+          <select id="fy_start">
+            ${Array.from({ length: 12 }, (_, i) => i + 1).map((m) => `<option value="${m}" ${String(m) === String(fyStart) ? 'selected' : ''}>${m}月</option>`).join('')}
+          </select>
+        </div>
       </div>
       <div class="field-row">
         <div class="field-label">光熱費 個人負担率のデフォルト<span class="hint">新規の月を入力する際の初期値</span></div>
-        <input type="number" id="default_pct" value="${escapeHtml(defaultPct)}">
-        <span class="field-suffix">％</span>
+        <div class="field-value">
+          <input type="number" id="default_pct" value="${escapeHtml(defaultPct)}">
+          <span class="field-suffix">％</span>
+        </div>
       </div>
     </div>
 
     <div class="card">
       <h2>得意先の管理</h2>
+      <div class="card-note">
+        取引終了年月を設定すると、その月を過ぎた時点で自動的に休止扱いになります（グラフでも、取引開始前・終了後の月は0円ではなく「データなし」として扱われます）。
+        未設定の場合は今まで通り手動で休止・再開できます。
+      </div>
       <table class="ledger">
-        <thead><tr><th>得意先</th><th class="num">開始残高</th><th>状態</th><th></th></tr></thead>
+        <thead><tr><th>得意先</th><th class="num">開始残高</th><th>取引開始年月</th><th>取引終了年月</th><th>状態</th><th></th></tr></thead>
         <tbody>
-          ${clients.map((c) => `
+          ${clients.map((c) => {
+            const startVal = c.trade_start_year && c.trade_start_month ? `${c.trade_start_year}-${String(c.trade_start_month).padStart(2, '0')}` : '';
+            const endVal = c.trade_end_year && c.trade_end_month ? `${c.trade_end_year}-${String(c.trade_end_month).padStart(2, '0')}` : '';
+            const autoManaged = !!(c.trade_end_year && c.trade_end_month);
+            return `
+              <tr>
+                <td>${escapeHtml(c.name)}</td>
+                <td class="num">${c.opening_balance}</td>
+                <td><input type="month" class="client-trade-start" data-id="${c.id}" value="${startVal}" style="font-size:12px;padding:4px 6px"></td>
+                <td><input type="month" class="client-trade-end" data-id="${c.id}" value="${endVal}" style="font-size:12px;padding:4px 6px"></td>
+                <td>
+                  ${c.archived ? '休止中' : '有効'}
+                  ${autoManaged ? '<span class="card-note" style="margin:0">終了年月により自動</span>' : ''}
+                </td>
+                <td>${autoManaged ? '' : `<button class="btn ghost archive-btn" data-id="${c.id}" data-archived="${c.archived}">${c.archived ? '再開する' : '休止する'}</button>`}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>支払元の管理（カード・現金）</h2>
+      <div class="card-note">経費タブで使うカード・現金の一覧です。休止しても過去の明細データは残ります。</div>
+      <table class="ledger">
+        <thead><tr><th>名前</th><th>種類</th><th>状態</th><th></th></tr></thead>
+        <tbody>
+          ${paymentSources.map((s) => `
             <tr>
-              <td>${escapeHtml(c.name)}</td>
-              <td class="num">${c.opening_balance}</td>
-              <td>${c.archived ? '休止中' : '有効'}</td>
-              <td><button class="btn ghost archive-btn" data-id="${c.id}" data-archived="${c.archived}">${c.archived ? '再開する' : '休止する'}</button></td>
+              <td>${escapeHtml(s.name)}</td>
+              <td>${s.kind === 'cash' ? '現金' : 'カード'}</td>
+              <td>${s.archived ? '休止中' : '有効'}</td>
+              <td><button class="btn ghost archive-source-btn" data-id="${s.id}" data-archived="${s.archived}">${s.archived ? '再開する' : '休止する'}</button></td>
             </tr>
           `).join('')}
         </tbody>
       </table>
+      ${paymentSources.length === 0 ? `<div class="card-note" style="margin:0">まだ登録されていません。「経費」タブから追加できます。</div>` : ''}
     </div>
 
     <div class="card">
@@ -112,13 +153,15 @@ export function render(container) {
       ${showClientIdField ? `
         <div class="field-row">
           <div class="field-label">OAuthクライアントID<span class="hint">Google Cloud ConsoleでOAuthクライアント（種類: ウェブアプリケーション）を作成し、承認済みのJavaScript生成元にこのアプリのURLを登録してから、クライアントIDを貼り付けてください</span></div>
-          <input type="text" id="gdrive_client_id" placeholder="xxxxxxxxxx.apps.googleusercontent.com" value="${escapeHtml(gdriveClientId)}">
+          <div class="field-value"><input type="text" id="gdrive_client_id" placeholder="xxxxxxxxxx.apps.googleusercontent.com" value="${escapeHtml(gdriveClientId)}"></div>
         </div>
       ` : `
         <div class="field-row">
           <div class="field-label">OAuthクライアントID</div>
-          <span class="card-note" style="margin:0">設定済み</span>
-          <button class="btn ghost" id="gdrive-edit-client-id-btn" style="justify-self:start">変更する</button>
+          <div class="field-value">
+            <span class="card-note" style="margin:0">設定済み</span>
+            <button class="btn ghost" id="gdrive-edit-client-id-btn">変更する</button>
+          </div>
         </div>
       `}
       <div class="toolbar">
@@ -134,7 +177,7 @@ export function render(container) {
       </div>
       <div class="field-row">
         <div class="field-label">自動バックアップ<span class="hint">接続済みの状態でアプリを使うたびに確認し、前回から24時間以上経っていたら自動で保存します</span></div>
-        <input type="checkbox" id="gdrive_auto_backup" style="width:auto;justify-self:start" ${gdriveAutoBackup ? 'checked' : ''}>
+        <div class="field-value"><input type="checkbox" id="gdrive_auto_backup" style="width:auto" ${gdriveAutoBackup ? 'checked' : ''}></div>
       </div>
       <div class="toolbar">
         <span class="card-note" style="margin:0">${gdriveLastBackupAt ? `最終バックアップ: ${new Date(gdriveLastBackupAt).toLocaleString('ja-JP')}` : 'まだバックアップされていません'}</span>
@@ -148,23 +191,25 @@ export function render(container) {
       <div class="card-note">背景・カードの色やパターンを好みに変更できます。</div>
       <div class="field-row">
         <div class="field-label">背景色</div>
-        <input type="color" id="theme_bg_color" value="${bgColor}" style="max-width:70px;padding:2px">
+        <div class="field-value"><input type="color" id="theme_bg_color" value="${bgColor}" style="max-width:70px;padding:2px"></div>
       </div>
       <div class="field-row">
         <div class="field-label">カードの色</div>
-        <input type="color" id="theme_card_color" value="${cardColor}" style="max-width:70px;padding:2px">
+        <div class="field-value"><input type="color" id="theme_card_color" value="${cardColor}" style="max-width:70px;padding:2px"></div>
       </div>
       <div class="field-row">
         <div class="field-label">文字色</div>
-        <input type="color" id="theme_ink_color" value="${inkColor}" style="max-width:70px;padding:2px">
+        <div class="field-value"><input type="color" id="theme_ink_color" value="${inkColor}" style="max-width:70px;padding:2px"></div>
       </div>
       <div class="field-row">
         <div class="field-label">背景パターン</div>
-        <select id="theme_pattern">
-          <option value="grid" ${pattern === 'grid' ? 'selected' : ''}>方眼（デフォルト）</option>
-          <option value="dots" ${pattern === 'dots' ? 'selected' : ''}>ドット</option>
-          <option value="none" ${pattern === 'none' ? 'selected' : ''}>なし（単色）</option>
-        </select>
+        <div class="field-value">
+          <select id="theme_pattern">
+            <option value="grid" ${pattern === 'grid' ? 'selected' : ''}>方眼（デフォルト）</option>
+            <option value="dots" ${pattern === 'dots' ? 'selected' : ''}>ドット</option>
+            <option value="none" ${pattern === 'none' ? 'selected' : ''}>なし（単色）</option>
+          </select>
+        </div>
       </div>
 
       <div class="card-note" style="margin-top:14px">
@@ -195,8 +240,10 @@ export function render(container) {
       ${showSavePresetForm ? `
         <div class="field-row">
           <div class="field-label">名前<span class="hint">空欄でも保存できます</span></div>
-          <input type="text" id="new-preset-name" placeholder="例: 秋っぽいやつ">
-          <button class="btn primary" id="save-preset-confirm-btn">保存する</button>
+          <div class="field-value">
+            <input type="text" id="new-preset-name" placeholder="例: 秋っぽいやつ">
+            <button class="btn primary" id="save-preset-confirm-btn">保存する</button>
+          </div>
         </div>
       ` : ''}
       ${savedPresets.length === 0 ? `
@@ -237,11 +284,13 @@ export function render(container) {
       ${bgImage ? `
         <div class="field-row">
           <div class="field-label">画像の使い道</div>
-          <select id="theme_bg_image_target">
-            <option value="background" ${bgImageTarget === 'background' ? 'selected' : ''}>背景に使う</option>
-            <option value="cards" ${bgImageTarget === 'cards' ? 'selected' : ''}>カードに使う</option>
-            <option value="both" ${bgImageTarget === 'both' ? 'selected' : ''}>両方に使う</option>
-          </select>
+          <div class="field-value">
+            <select id="theme_bg_image_target">
+              <option value="background" ${bgImageTarget === 'background' ? 'selected' : ''}>背景に使う</option>
+              <option value="cards" ${bgImageTarget === 'cards' ? 'selected' : ''}>カードに使う</option>
+              <option value="both" ${bgImageTarget === 'both' ? 'selected' : ''}>両方に使う</option>
+            </select>
+          </div>
         </div>
         <img src="${bgImage}" alt="アップロードした背景画像" style="max-width:200px;border-radius:3px;border:1px solid var(--grid-line);margin-top:10px">
       ` : ''}
@@ -258,6 +307,32 @@ export function render(container) {
     btn.addEventListener('click', () => {
       const archived = btn.dataset.archived === '1' ? 0 : 1;
       archiveClient(Number(btn.dataset.id), archived);
+      render(container);
+    });
+  });
+
+  container.querySelectorAll('.client-trade-start').forEach((input) => {
+    input.addEventListener('change', () => {
+      const client = clients.find((c) => c.id === Number(input.dataset.id));
+      const [y, m] = input.value ? input.value.split('-').map(Number) : [null, null];
+      upsertClient({ ...client, trade_start_year: y, trade_start_month: m });
+      render(container);
+    });
+  });
+
+  container.querySelectorAll('.client-trade-end').forEach((input) => {
+    input.addEventListener('change', () => {
+      const client = clients.find((c) => c.id === Number(input.dataset.id));
+      const [y, m] = input.value ? input.value.split('-').map(Number) : [null, null];
+      upsertClient({ ...client, trade_end_year: y, trade_end_month: m });
+      render(container);
+    });
+  });
+
+  container.querySelectorAll('.archive-source-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const archived = btn.dataset.archived === '1' ? 0 : 1;
+      archivePaymentSource(Number(btn.dataset.id), archived);
       render(container);
     });
   });

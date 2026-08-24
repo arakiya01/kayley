@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@900&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: transparent; }
+  body {
+    width: 1024px; height: 1024px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .circle {
+    width: 960px; height: 960px;
+    border-radius: 50%;
+    background: #F8EBCF;
+    display: flex; align-items: center; justify-content: center;
+    box-sizing: border-box;
+    position: relative;
+    border: 14px solid #07743C;
+  }
+  .glyph-wrap {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transform: translateY(-14px);
+  }
+  .glyph {
+    font-family: 'M PLUS Rounded 1c', sans-serif;
+    font-weight: 900;
+    font-size: 560px;
+    line-height: 1;
+    color: #07743C;
+    letter-spacing: -10px;
+  }
+  .stripes {
+    display: flex;
+    gap: 13px;
+    margin-top: 22px;
+  }
+  .stripe {
+    width: 118px;
+    height: 38px;
+    border-radius: 19px;
+  }
+  .stripe.g { background: #07743C; }
+  .stripe.y { background: #F3BB0C; }
+  .stripe.r { background: #CC2A25; }
+</style>
+</head>
+<body>
+  <div class="circle">
+    <div class="glyph-wrap">
+      <div class="glyph">K</div>
+      <div class="stripes">
+        <div class="stripe g"></div>
+        <div class="stripe y"></div>
+        <div class="stripe r"></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

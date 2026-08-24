@@ -240,3 +240,13 @@ export async function deleteFile(fileId) {
   });
   if (!res.ok && res.status !== 404) throw new Error('Google Drive上のファイル削除に失敗しました');
 }
+
+// 月次レポートに証憑の中身を埋め込むための、ファイル本体（Blob）の取得
+export async function downloadFile(fileId) {
+  await ensureConnected();
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+    headers: authHeader(),
+  });
+  if (!res.ok) throw new Error('Google Driveからのファイル取得に失敗しました');
+  return res.blob();
+}

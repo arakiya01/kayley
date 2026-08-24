@@ -1,7 +1,7 @@
 import {
   getOfficerPayEntry, upsertOfficerPayEntry, resolveOfficerDeductions, prevMonth, getMeta, getFoundingDate,
 } from '../db.js';
-import { yen, monthLabel, monthShort, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading } from '../format.js';
+import { yen, monthLabel, monthShort, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading, todayYearMonth } from '../format.js';
 import { renderMonthBar } from './monthbar.js';
 import { renderFySelector } from './fyselector.js';
 import { enableGridPaste } from './gridpaste.js';
@@ -40,8 +40,10 @@ export function render(container, ctx) {
         <h2>役員報酬</h2>
         <div class="field-row">
           <div class="field-label">支給額</div>
-          <input type="number" id="gross_pay" step="1">
-          <span class="field-suffix">円</span>
+          <div class="field-value">
+            <input type="number" id="gross_pay" step="1">
+            <span class="field-suffix">円</span>
+          </div>
         </div>
         <div class="toolbar">
           <span class="spacer"></span>
@@ -50,8 +52,10 @@ export function render(container, ctx) {
         ${DEDUCTION_FIELDS.map((f) => `
           <div class="field-row">
             <div class="field-label">${f.label}</div>
-            <input type="number" id="${f.key}" step="1">
-            <span class="field-suffix">円</span>
+            <div class="field-value">
+              <input type="number" id="${f.key}" step="1">
+              <span class="field-suffix">円</span>
+            </div>
           </div>
         `).join('')}
       </div>
@@ -64,18 +68,22 @@ export function render(container, ctx) {
         </div>
         <div class="field-row">
           <div class="field-label">自動反映を使う</div>
-          <input type="checkbox" id="use_auto" style="width:auto;justify-self:start">
+          <div class="field-value"><input type="checkbox" id="use_auto" style="width:auto"></div>
         </div>
         <div id="manual-fields" style="display:none">
           <div class="field-row">
             <div class="field-label">家賃控除（手入力）</div>
-            <input type="number" id="manual_rent_deduction" step="1">
-            <span class="field-suffix">円</span>
+            <div class="field-value">
+              <input type="number" id="manual_rent_deduction" step="1">
+              <span class="field-suffix">円</span>
+            </div>
           </div>
           <div class="field-row">
             <div class="field-label">水道光熱費控除（手入力）</div>
-            <input type="number" id="manual_utility_deduction" step="1">
-            <span class="field-suffix">円</span>
+            <div class="field-value">
+              <input type="number" id="manual_utility_deduction" step="1">
+              <span class="field-suffix">円</span>
+            </div>
           </div>
         </div>
         <div class="card-grid" style="margin-top:14px">
@@ -200,9 +208,12 @@ export function render(container, ctx) {
     const months = fiscalYearMonths(fiscalYearStartOf(year, month, fyStartMonth), fyStartMonth);
     const highlightIndex = months.findIndex((m) => m.year === year && m.month === month);
     const xLabels = months.map((m) => `${m.month}月`);
+    const today = todayYearMonth();
+    const todayIdx = today.year * 12 + today.month;
     const grossSeries = [];
     const netSeries = [];
     months.forEach((m) => {
+      if (m.year * 12 + m.month > todayIdx) { grossSeries.push(null); netSeries.push(null); return; }
       const e = getOfficerPayEntry(m.year, m.month);
       const d = resolveOfficerDeductions(m.year, m.month);
       const gross = e ? e.gross_pay : 0;

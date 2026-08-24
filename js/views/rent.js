@@ -1,6 +1,6 @@
 import { getRentUtilityEntry, upsertRentUtilityEntry, computeUtilityPersonalTotal, getMeta, getFoundingDate } from '../db.js';
 import {
-  yen, monthShort, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading,
+  yen, monthShort, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading, todayYearMonth,
 } from '../format.js';
 import { renderMonthBar } from './monthbar.js';
 import { renderFySelector } from './fyselector.js';
@@ -46,13 +46,17 @@ export function render(container, ctx) {
         <div class="card-note">全体の家賃実額と、個人負担分（固定額）を入力します。</div>
         <div class="field-row">
           <div class="field-label">家賃（全体・実額）</div>
-          <input type="number" id="rent_total" step="1">
-          <span class="field-suffix">円</span>
+          <div class="field-value">
+            <input type="number" id="rent_total" step="1">
+            <span class="field-suffix">円</span>
+          </div>
         </div>
         <div class="field-row">
           <div class="field-label">家賃（個人負担・固定）<span class="hint">按分契約上の固定額</span></div>
-          <input type="number" id="rent_personal_fixed" step="1">
-          <span class="field-suffix">円</span>
+          <div class="field-value">
+            <input type="number" id="rent_personal_fixed" step="1">
+            <span class="field-suffix">円</span>
+          </div>
         </div>
       </div>
       <div class="card">
@@ -61,10 +65,12 @@ export function render(container, ctx) {
         ${FIELDS.map((f) => `
           <div class="field-row">
             <div class="field-label">${f.label}（全体）</div>
-            <input type="number" id="${f.totalKey}" step="1">
-            <span class="field-suffix">円</span>
-            <input type="number" id="${f.pctKey}" step="1" style="max-width:90px">
-            <span class="field-suffix">％負担 → <span class="num" id="${f.key}-personal">0</span>円</span>
+            <div class="field-value">
+              <input type="number" id="${f.totalKey}" step="1">
+              <span class="field-suffix">円</span>
+              <input type="number" id="${f.pctKey}" step="1" style="flex:0 1 70px">
+              <span class="field-suffix">％負担 → <span class="num" id="${f.key}-personal">0</span>円</span>
+            </div>
           </div>
         `).join('')}
       </div>
@@ -157,9 +163,13 @@ export function render(container, ctx) {
     const months = fiscalYearMonths(fiscalYearStartOf(year, month, fyStartMonth), fyStartMonth);
     const highlightIndex = months.findIndex((m) => m.year === year && m.month === month);
     const xLabels = months.map((m) => `${m.month}月`);
+    const today = todayYearMonth();
+    const todayIdx = today.year * 12 + today.month;
+    const isFuture = (m) => m.year * 12 + m.month > todayIdx;
     const rentSeries = [];
     const utilitySeries = [];
     months.forEach((m) => {
+      if (isFuture(m)) { rentSeries.push(null); utilitySeries.push(null); return; }
       const e = getRentUtilityEntry(m.year, m.month);
       rentSeries.push(e ? e.rent_personal_fixed : 0);
       utilitySeries.push(e ? computeUtilityPersonalTotal(e) : 0);
@@ -175,6 +185,7 @@ export function render(container, ctx) {
 
     const waterSeries = [], gasSeries = [], elecSeries = [];
     months.forEach((m) => {
+      if (isFuture(m)) { waterSeries.push(null); gasSeries.push(null); elecSeries.push(null); return; }
       const e = getRentUtilityEntry(m.year, m.month);
       waterSeries.push(e ? Math.round(e.water_total * e.water_personal_pct / 100) : 0);
       gasSeries.push(e ? Math.round(e.gas_total * e.gas_personal_pct / 100) : 0);

@@ -15,13 +15,17 @@ export function foldToFour(items, otherLabel = 'その他') {
   return head;
 }
 
-// items: [{label, values:number[]}] を先頭3件 + 残りを要素ごとに合算した「その他」に畳む
+// items: [{label, values:(number|null)[]}] を先頭3件 + 残りを要素ごとに合算した「その他」に畳む
+// （全系列がnull＝まだ来ていない月の場合は、合算後もnullのままにする）
 export function foldSeriesArrays(items, otherLabel = 'その他') {
   if (items.length <= SERIES_COLORS.length) return items;
   const head = items.slice(0, SERIES_COLORS.length - 1);
   const rest = items.slice(SERIES_COLORS.length - 1);
   const len = rest[0]?.values.length || 0;
-  const otherValues = Array.from({ length: len }, (_, i) => rest.reduce((a, s) => a + (s.values[i] || 0), 0));
+  const otherValues = Array.from({ length: len }, (_, i) => {
+    if (rest.every((s) => s.values[i] == null)) return null;
+    return rest.reduce((a, s) => a + (s.values[i] || 0), 0);
+  });
   head.push({ label: otherLabel, values: otherValues });
   return head;
 }

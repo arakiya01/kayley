@@ -1,35 +1,47 @@
-import { monthLabel, addMonths } from '../format.js';
-import { getMonthStatus, setMonthFinalized, isMonthAllowed } from '../db.js';
-
-let outsideClickBound = false;
-function closeAllPopovers(except) {
-  document.querySelectorAll('.month-popover.open').forEach((p) => {
-    if (p !== except) p.classList.remove('open');
-  });
-}
-function bindOutsideClickOnce() {
-  if (outsideClickBound) return;
-  outsideClickBound = true;
-  document.addEventListener('click', (e) => {
-    if (e.target.closest('.month-picker-wrap')) return;
-    closeAllPopovers(null);
-  });
-}
+// 各画面共通の年月ナビゲーション。年度は前後の矢印かプルダウンで選び、
+// 月は「月次確定状況」と同じ形の帯から直接クリックして選ぶ（ダッシュボードと統一）。
+import { monthLabel, monthShort, fiscalYearStartOf, fiscalYearMonths, todayYearMonth } from '../format.js';
+import { getMonthStatus, setMonthFinalized, isMonthAllowed, getMeta, getFoundingDate } from '../db.js';
+import { renderFySelector } from './fyselector.js';
 
 export function renderMonthBar(container, { year, month, onChange, showFinalize = true }) {
-  bindOutsideClickOnce();
+  const fyStartMonth = Number(getMeta('fiscal_year_start_month') || 4);
+  const foundingDate = getFoundingDate();
+  const fyStartYear = fiscalYearStartOf(year, month, fyStartMonth);
+  const months = fiscalYearMonths(fyStartYear, fyStartMonth);
+  const currentIndex = months.findIndex((m) => m.year === year && m.month === month);
+  const today = todayYearMonth();
+  const todayIdx = today.year * 12 + today.month;
+  const currentFy = fiscalYearStartOf(today.year, today.month, fyStartMonth);
+
   const status = getMonthStatus(year, month);
   const finalized = !!(status && status.finalized);
-  const prevMonthPoint = addMonths(year, month, -1);
-  const canGoPrev = isMonthAllowed(prevMonthPoint.year, prevMonthPoint.month);
 
   container.innerHTML = `
     <div class="month-bar">
-      <div class="stepper month-picker-wrap" style="position:relative">
-        <button class="step" data-dir="-1" aria-label="前月へ" ${canGoPrev ? '' : 'disabled'}>&#8249;</button>
-        <button class="current-month" id="month-picker-toggle" type="button" style="background:none;border:none;cursor:pointer;font-family:inherit">${monthLabel(year, month)}</button>
-        <button class="step" data-dir="1" aria-label="翌月へ">&#8250;</button>
-        <div class="month-popover" id="month-popover"></div>
+      <div class="month-bar-main">
+        <div id="fy-selector-slot"></div>
+        <div class="status-strip">
+          ${months.map((m, i) => {
+            const allowed = isMonthAllowed(m.year, m.month);
+            const isFuture = m.year * 12 + m.month > todayIdx;
+            let cls = 'warning';
+            let title = `${monthLabel(m.year, m.month)}：未確定`;
+            if (!allowed) { cls = 'disabled'; title = `${monthLabel(m.year, m.month)}：創業前`; }
+            else if (isFuture) { cls = 'future'; title = `${monthLabel(m.year, m.month)}：未来`; }
+            else {
+              const st = getMonthStatus(m.year, m.month);
+              if (st && st.finalized) { cls = 'good'; title = `${monthLabel(m.year, m.month)}：確定済み`; }
+            }
+            return `
+              <button class="pill ${cls} ${i === currentIndex ? 'current' : ''}" title="${title}"
+                data-year="${m.year}" data-month="${m.month}" ${(!allowed || isFuture) ? 'disabled' : ''}>
+                <span class="dot"></span>
+                <span>${monthShort(m.month)}</span>
+              </button>
+            `;
+          }).join('')}
+        </div>
       </div>
       ${showFinalize ? `
         <div class="finalize-badge">
@@ -40,12 +52,24 @@ export function renderMonthBar(container, { year, month, onChange, showFinalize 
     </div>
   `;
 
-  container.querySelectorAll('.step').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const dir = Number(btn.dataset.dir);
-      const next = addMonths(year, month, dir);
-      onChange(next.year, next.month);
-    });
+  renderFySelector(container.querySelector('#fy-selector-slot'), {
+    fyStartYear,
+    fyStartMonth,
+    foundingDate,
+    noteText: '',
+    maxFyStartYear: currentFy,
+    onChange: (newFyStartYear) => {
+      const newMonths = fiscalYearMonths(newFyStartYear, fyStartMonth);
+      // 前の期に移動したら最終月、次の期に移動したら初月を選択する
+      const target = newFyStartYear < fyStartYear ? newMonths[11]
+        : newFyStartYear > fyStartYear ? newMonths[0]
+        : newMonths[currentIndex >= 0 ? currentIndex : 0];
+      onChange(target.year, target.month);
+    },
+  });
+
+  container.querySelectorAll('.status-strip .pill:not([disabled])').forEach((btn) => {
+    btn.addEventListener('click', () => onChange(Number(btn.dataset.year), Number(btn.dataset.month)));
   });
 
   const stampBtn = container.querySelector('#stamp-btn');
@@ -55,53 +79,4 @@ export function renderMonthBar(container, { year, month, onChange, showFinalize 
       onChange(year, month);
     });
   }
-
-  // ---- 年月ピッカー（ポップオーバー） ----
-  let popoverYear = year;
-  const popover = container.querySelector('#month-popover');
-
-  function renderPopover() {
-    const monthNames = Array.from({ length: 12 }, (_, i) => i + 1);
-    popover.innerHTML = `
-      <div class="popover-year-row">
-        <button class="btn ghost year-step" data-dir="-1" aria-label="前年へ">&#8249;</button>
-        <div class="popover-year-label">${popoverYear}年</div>
-        <button class="btn ghost year-step" data-dir="1" aria-label="翌年へ">&#8250;</button>
-      </div>
-      <div class="popover-month-grid">
-        ${monthNames.map((m) => {
-          const allowed = isMonthAllowed(popoverYear, m);
-          const isSelected = popoverYear === year && m === month;
-          return `<button class="popover-month-btn ${isSelected ? 'selected' : ''}" data-year="${popoverYear}" data-month="${m}" ${allowed ? '' : 'disabled'}>${m}月</button>`;
-        }).join('')}
-      </div>
-    `;
-    popover.querySelectorAll('.year-step').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        popoverYear += Number(btn.dataset.dir);
-        renderPopover();
-      });
-    });
-    popover.querySelectorAll('.popover-month-btn:not(:disabled)').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        popover.classList.remove('open');
-        onChange(Number(btn.dataset.year), Number(btn.dataset.month));
-      });
-    });
-  }
-
-  renderPopover();
-
-  container.querySelector('#month-picker-toggle').addEventListener('click', (e) => {
-    e.stopPropagation();
-    const willOpen = !popover.classList.contains('open');
-    closeAllPopovers(popover);
-    popoverYear = year;
-    renderPopover();
-    popover.classList.toggle('open', willOpen);
-  });
-
-  popover.addEventListener('click', (e) => e.stopPropagation());
 }

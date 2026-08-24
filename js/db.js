@@ -1,4 +1,5 @@
 import { Storage } from './storage.js';
+import { todayYearMonth } from './format.js';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -15,7 +16,11 @@ CREATE TABLE IF NOT EXISTS clients (
   archived INTEGER NOT NULL DEFAULT 0,
   opening_balance INTEGER NOT NULL DEFAULT 0,
   opening_year INTEGER,
-  opening_month INTEGER
+  opening_month INTEGER,
+  trade_start_year INTEGER,
+  trade_start_month INTEGER,
+  trade_end_year INTEGER,
+  trade_end_month INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS ar_entries (
@@ -83,6 +88,25 @@ CREATE TABLE IF NOT EXISTS attachments (
   client_id INTEGER REFERENCES clients(id)
 );
 
+CREATE TABLE IF NOT EXISTS payment_sources (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'card',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  archived INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS statement_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id INTEGER NOT NULL REFERENCES payment_sources(id),
+  year INTEGER NOT NULL,
+  month INTEGER NOT NULL,
+  txn_date TEXT,
+  description TEXT NOT NULL,
+  amount INTEGER NOT NULL DEFAULT 0,
+  note TEXT
+);
+
 CREATE TABLE IF NOT EXISTS theme_presets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT,
@@ -136,6 +160,12 @@ function migrateColumns() {
   };
   ensureColumn('attachments', 'category', "TEXT NOT NULL DEFAULT 'receipt'");
   ensureColumn('attachments', 'client_id', 'INTEGER REFERENCES clients(id)');
+  ensureColumn('attachments', 'source_id', 'INTEGER REFERENCES payment_sources(id)');
+  ensureColumn('attachments', 'statement_transaction_id', 'INTEGER REFERENCES statement_transactions(id)');
+  ensureColumn('clients', 'trade_start_year', 'INTEGER');
+  ensureColumn('clients', 'trade_start_month', 'INTEGER');
+  ensureColumn('clients', 'trade_end_year', 'INTEGER');
+  ensureColumn('clients', 'trade_end_month', 'INTEGER');
 }
 
 export async function openDatabase() {
@@ -214,7 +244,25 @@ export function isMonthAllowed(year, month) {
 
 /* ---------------- clients ---------------- */
 
+// 取引終了年月を設定した得意先は、その月を過ぎたら自動で休止扱いにする（手動の休止・再開ボタンの代わり）。
+// 終了年月を先の日付に直せば自動で再開扱いに戻る。終了年月を設定していない得意先は今まで通り手動管理。
+function syncArchivedFromTradeEnd() {
+  const today = todayYearMonth();
+  const todayIdx = today.year * 12 + today.month;
+  const rows = all(
+    'SELECT id, archived, trade_end_year, trade_end_month FROM clients WHERE trade_end_year IS NOT NULL AND trade_end_month IS NOT NULL'
+  );
+  rows.forEach((r) => {
+    const endIdx = r.trade_end_year * 12 + r.trade_end_month;
+    const shouldBeArchived = todayIdx > endIdx ? 1 : 0;
+    if (r.archived !== shouldBeArchived) {
+      run('UPDATE clients SET archived=? WHERE id=?', [shouldBeArchived, r.id]);
+    }
+  });
+}
+
 export function listClients({ includeArchived = false } = {}) {
+  syncArchivedFromTradeEnd();
   const sql = includeArchived
     ? 'SELECT * FROM clients ORDER BY sort_order, id'
     : 'SELECT * FROM clients WHERE archived = 0 ORDER BY sort_order, id';
@@ -256,27 +304,103 @@ export function getClient(id) {
   return one('SELECT * FROM clients WHERE id=?', [id]);
 }
 
+// 取引開始年月より前・取引終了年月より後の月かどうか（グラフでその月を0円ではなく
+// 「データなし」として扱うために使う）。開始・終了が未設定ならどの月も許可する。
+export function clientTradeAllowsMonth(client, year, month) {
+  const idx = year * 12 + month;
+  if (client.trade_start_year && client.trade_start_month) {
+    if (idx < client.trade_start_year * 12 + client.trade_start_month) return false;
+  }
+  if (client.trade_end_year && client.trade_end_month) {
+    if (idx > client.trade_end_year * 12 + client.trade_end_month) return false;
+  }
+  return true;
+}
+
 export function upsertClient(client) {
   if (client.id) {
     run(
-      `UPDATE clients SET name=?, currency=?, fx_note=?, sort_order=?, opening_balance=?, opening_year=?, opening_month=? WHERE id=?`,
+      `UPDATE clients SET name=?, currency=?, fx_note=?, sort_order=?, opening_balance=?, opening_year=?, opening_month=?,
+         trade_start_year=?, trade_start_month=?, trade_end_year=?, trade_end_month=?
+       WHERE id=?`,
       [client.name, client.currency || 'JPY', client.fx_note || null, client.sort_order || 0,
-       client.opening_balance || 0, client.opening_year || null, client.opening_month || null, client.id]
+       client.opening_balance || 0, client.opening_year || null, client.opening_month || null,
+       client.trade_start_year || null, client.trade_start_month || null,
+       client.trade_end_year || null, client.trade_end_month || null, client.id]
     );
+    syncArchivedFromTradeEnd();
     return client.id;
   }
   const maxOrder = one('SELECT COALESCE(MAX(sort_order), -1) AS m FROM clients').m;
   run(
-    `INSERT INTO clients (name, currency, fx_note, sort_order, opening_balance, opening_year, opening_month)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO clients (name, currency, fx_note, sort_order, opening_balance, opening_year, opening_month,
+       trade_start_year, trade_start_month, trade_end_year, trade_end_month)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [client.name, client.currency || 'JPY', client.fx_note || null, maxOrder + 1,
-     client.opening_balance || 0, client.opening_year || null, client.opening_month || null]
+     client.opening_balance || 0, client.opening_year || null, client.opening_month || null,
+     client.trade_start_year || null, client.trade_start_month || null,
+     client.trade_end_year || null, client.trade_end_month || null]
   );
-  return one('SELECT last_insert_rowid() AS id').id;
+  const newId = one('SELECT last_insert_rowid() AS id').id;
+  syncArchivedFromTradeEnd();
+  return newId;
 }
 
 export function archiveClient(id, archived = 1) {
   run('UPDATE clients SET archived=? WHERE id=?', [archived, id]);
+}
+
+/* ---------------- payment sources (カード・現金) ---------------- */
+
+export function listPaymentSources({ includeArchived = false } = {}) {
+  const sql = includeArchived
+    ? 'SELECT * FROM payment_sources ORDER BY sort_order, id'
+    : 'SELECT * FROM payment_sources WHERE archived = 0 ORDER BY sort_order, id';
+  return all(sql);
+}
+
+export function upsertPaymentSource(source) {
+  if (source.id) {
+    run('UPDATE payment_sources SET name=?, kind=? WHERE id=?', [source.name, source.kind || 'card', source.id]);
+    return source.id;
+  }
+  const maxOrder = one('SELECT COALESCE(MAX(sort_order), -1) AS m FROM payment_sources').m;
+  run('INSERT INTO payment_sources (name, kind, sort_order) VALUES (?, ?, ?)', [source.name, source.kind || 'card', maxOrder + 1]);
+  return one('SELECT last_insert_rowid() AS id').id;
+}
+
+export function archivePaymentSource(id, archived = 1) {
+  run('UPDATE payment_sources SET archived=? WHERE id=?', [archived, id]);
+}
+
+/* ---------------- statement transactions (カード明細の1行ずつの取引) ---------------- */
+
+export function listStatementTransactions(sourceId, year, month) {
+  return all(
+    'SELECT * FROM statement_transactions WHERE source_id=? AND year=? AND month=? ORDER BY txn_date, id',
+    [sourceId, year, month]
+  );
+}
+
+export function addStatementTransaction({ source_id, year, month, txn_date, description, amount, note }) {
+  run(
+    `INSERT INTO statement_transactions (source_id, year, month, txn_date, description, amount, note)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [source_id, year, month, txn_date || null, description, amount || 0, note || null]
+  );
+  return one('SELECT last_insert_rowid() AS id').id;
+}
+
+export function removeStatementTransaction(id) {
+  run('DELETE FROM statement_transactions WHERE id=?', [id]);
+}
+
+// 同じ明細を再アップロードした時に、前回分の取引を消してから入れ直すための一括削除。
+// 紐づいていた領収書は削除せず、紐づけだけ外す（受け皿が消えても添付ファイル自体は残す）。
+export function clearStatementTransactions(sourceId, year, month) {
+  const rows = all('SELECT id FROM statement_transactions WHERE source_id=? AND year=? AND month=?', [sourceId, year, month]);
+  rows.forEach((r) => run('UPDATE attachments SET statement_transaction_id=NULL WHERE statement_transaction_id=?', [r.id]));
+  run('DELETE FROM statement_transactions WHERE source_id=? AND year=? AND month=?', [sourceId, year, month]);
 }
 
 /* ---------------- AR entries ---------------- */
@@ -315,6 +439,19 @@ export function computeArLedger(client) {
     running = closing;
     return { year: h.year, month: h.month, sales: h.sales, payment: h.payment, opening, closing };
   });
+}
+
+// 「開始残高が0より大きいのに入金が無い」月が、指定した年月から遡って何ヶ月連続しているか（滞留検知用）
+export function unpaidStreak(ledger, year, month) {
+  const idx = ledger.findIndex((r) => r.year === year && r.month === month);
+  if (idx === -1) return 0;
+  let streak = 0;
+  for (let i = idx; i >= 0; i--) {
+    const row = ledger[i];
+    if (row.opening > 0 && row.payment === 0) streak++;
+    else break;
+  }
+  return streak;
 }
 
 // 指定の年月時点での残高（その月を含む）。データが無い月は直前の残高を引き継ぐ。
@@ -441,12 +578,14 @@ export function listAttachments(year, month) {
   return all('SELECT * FROM attachments WHERE year=? AND month=? ORDER BY id', [year, month]);
 }
 
-export function addAttachment({ year, month, drive_file_id, name, mime_type, web_view_link, category, client_id }) {
+export function addAttachment({
+  year, month, drive_file_id, name, mime_type, web_view_link, category, client_id, source_id, statement_transaction_id,
+}) {
   run(
-    `INSERT INTO attachments (year, month, drive_file_id, name, mime_type, web_view_link, uploaded_at, category, client_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO attachments (year, month, drive_file_id, name, mime_type, web_view_link, uploaded_at, category, client_id, source_id, statement_transaction_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [year, month, drive_file_id, name, mime_type || null, web_view_link || null, new Date().toISOString(),
-     category || 'receipt', client_id || null]
+     category || 'receipt', client_id || null, source_id || null, statement_transaction_id || null]
   );
 }
 

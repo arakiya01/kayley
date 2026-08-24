@@ -6,6 +6,7 @@ import * as dashboard from './views/dashboard.js';
 import * as ar from './views/ar.js';
 import * as rent from './views/rent.js';
 import * as officerpay from './views/officerpay.js';
+import * as expenses from './views/expenses.js';
 import * as report from './views/report.js';
 import * as settings from './views/settings.js';
 
@@ -14,6 +15,7 @@ const TABS = [
   { key: 'ar', label: '売掛金', mod: ar, needsMonth: true },
   { key: 'rent', label: '家賃・光熱費', mod: rent, needsMonth: true },
   { key: 'officer', label: '役員報酬', mod: officerpay, needsMonth: true },
+  { key: 'expenses', label: '経費', mod: expenses, needsMonth: true },
   { key: 'report', label: '月次レポート', mod: report, needsMonth: true },
   { key: 'settings', label: '設定', mod: settings, needsMonth: false },
 ];

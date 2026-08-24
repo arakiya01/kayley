@@ -1,13 +1,15 @@
 import {
-  listClientsForMonths, computeArLedger, getRentUtilityEntry, computeUtilityPersonalTotal,
+  listClientsForMonths, computeArLedger, unpaidStreak, getRentUtilityEntry, computeUtilityPersonalTotal,
   getOfficerPayEntry, resolveOfficerDeductions, getMeta, getMonthStatus, getFoundingDate,
+  isMonthAllowed, listAttachments,
 } from '../db.js';
 import {
-  yen, monthLabel, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading,
+  yen, yenSigned, monthLabel, escapeHtml, addMonths, todayYearMonth,
+  fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading,
 } from '../format.js';
 import { renderMonthBar } from './monthbar.js';
-import { lineChart, emptyChart } from '../charts.js';
-import { seriesColor } from '../colors.js';
+import { lineChart, donutChart, emptyChart } from '../charts.js';
+import { seriesColor, foldToFour } from '../colors.js';
 
 const DEDUCTION_KEYS = ['health_insurance', 'nursing_care_insurance', 'pension', 'child_support_levy', 'withholding_tax'];
 
@@ -35,6 +37,25 @@ function netPayFor(year, month) {
   return e.gross_pay - total;
 }
 
+// 2ヶ月以上、売上計上済みなのに入金が確認できていない得意先を抽出（滞留アラート用）
+function agingSummary(clients, year, month) {
+  const out = [];
+  clients.forEach((c) => {
+    const ledger = computeArLedger(c);
+    const streak = unpaidStreak(ledger, year, month);
+    if (streak < 2) return;
+    const idx = ledger.findIndex((r) => r.year === year && r.month === month);
+    const balance = idx >= 0 ? ledger[idx].closing : (c.opening_balance || 0);
+    out.push({ name: c.name, streak, balance });
+  });
+  return out.sort((a, b) => b.streak - a.streak || b.balance - a.balance);
+}
+
+function deltaHtml(delta, label = '前月比') {
+  if (!delta) return `<div class="delta" style="color:var(--ink-muted)">${label} ±0円</div>`;
+  return `<div class="delta ${delta > 0 ? 'up' : 'down'}">${label} ${yenSigned(delta)}円</div>`;
+}
+
 export function render(container, ctx) {
   const { year, month } = ctx;
   const fyStartMonth = Number(getMeta('fiscal_year_start_month') || 4);
@@ -43,53 +64,88 @@ export function render(container, ctx) {
   const highlightIndex = months.findIndex((m) => m.year === year && m.month === month);
   const clients = listClientsForMonths(months);
   const companyName = getMeta('company_name') || '(会社名未設定)';
+  const periodHeading = fiscalPeriodHeading(year, month, fyStartMonth, getFoundingDate());
+  const today = todayYearMonth();
 
   const thisMonth = monthSalesAndPayment(clients, year, month);
+  const prevYM = addMonths(year, month, -1);
+  const prevMonthData = monthSalesAndPayment(clients, prevYM.year, prevYM.month);
   const rentEntry = getRentUtilityEntry(year, month);
   const personalBurden = rentEntry ? (rentEntry.rent_personal_fixed + computeUtilityPersonalTotal(rentEntry)) : null;
   const netPay = netPayFor(year, month);
   const status = getMonthStatus(year, month);
 
-  // 今期の売上累計（今期の各月の実績を合算。まだ来ていない月は実績0なので自然に足されない）
+  // 今期の売上・入金累計（今期の各月の実績を合算。まだ来ていない月は実績0なので自然に足されない）
   const monthKeys = new Set(months.map((m) => `${m.year}-${m.month}`));
-  let fySum = 0;
+  let fySalesSum = 0, fyPaymentSum = 0;
   clients.forEach((c) => {
     computeArLedger(c).forEach((r) => {
-      if (monthKeys.has(`${r.year}-${r.month}`)) fySum += r.sales;
+      if (monthKeys.has(`${r.year}-${r.month}`)) { fySalesSum += r.sales; fyPaymentSum += r.payment; }
     });
   });
 
-  const periodHeading = fiscalPeriodHeading(year, month, fyStartMonth, getFoundingDate());
+  const aging = agingSummary(clients, year, month);
+  const agingTotal = aging.reduce((a, x) => a + x.balance, 0);
+
+  const todayIdx = today.year * 12 + today.month;
+  const unfinalizedCount = months.filter((m) => {
+    if (!isMonthAllowed(m.year, m.month)) return false;
+    if (m.year * 12 + m.month > todayIdx) return false;
+    const st = getMonthStatus(m.year, m.month);
+    return !(st && st.finalized);
+  }).length;
+
+  const monthAttachments = listAttachments(year, month);
+  const invoiceCount = monthAttachments.filter((a) => a.category === 'invoice').length;
+  const receiptCount = monthAttachments.filter((a) => a.category !== 'invoice').length;
 
   container.innerHTML = `
     <div id="month-bar-slot"></div>
     <div class="card">
-      <h2>${companyName}</h2>
-      <div class="card-note">${monthLabel(year, month)} 時点のスナップショット</div>
+      <h2>${escapeHtml(companyName)}</h2>
+      <div class="card-note">${monthLabel(year, month)} 時点のスナップショット・${periodHeading}</div>
       <div class="card-grid">
         <div class="stat-tile">
           <div class="label">当月売上</div>
           <div class="value num">${yen(thisMonth.sales)}<span class="unit">円</span></div>
+          ${deltaHtml(thisMonth.sales - prevMonthData.sales)}
         </div>
         <div class="stat-tile">
           <div class="label">当月入金</div>
           <div class="value num">${yen(thisMonth.payment)}<span class="unit">円</span></div>
+          ${deltaHtml(thisMonth.payment - prevMonthData.payment)}
         </div>
         <div class="stat-tile">
           <div class="label">売掛金残高合計</div>
           <div class="value num">${yen(thisMonth.balance)}<span class="unit">円</span></div>
-        </div>
-        <div class="stat-tile">
-          <div class="label">家賃・光熱費 個人負担</div>
-          <div class="value num">${personalBurden == null ? '—' : yen(personalBurden)}<span class="unit">円</span></div>
-        </div>
-        <div class="stat-tile">
-          <div class="label">役員報酬 差引支給額</div>
-          <div class="value num">${netPay == null ? '—' : yen(netPay)}<span class="unit">円</span></div>
+          <div class="delta" style="color:var(--ink-muted)">前月末比 ${yenSigned(thisMonth.balance - prevMonthData.balance)}円</div>
         </div>
         <div class="stat-tile">
           <div class="label">今期の売上累計</div>
-          <div class="value num">${yen(fySum)}<span class="unit">円</span></div>
+          <div class="value num">${yen(fySalesSum)}<span class="unit">円</span></div>
+          <div class="delta" style="color:var(--ink-muted)">入金累計 ${yen(fyPaymentSum)}円</div>
+        </div>
+        <div class="stat-tile">
+          <div class="label">家賃・光熱費 個人負担（当月）</div>
+          <div class="value num">${personalBurden == null ? '—' : yen(personalBurden)}<span class="unit">円</span></div>
+        </div>
+        <div class="stat-tile">
+          <div class="label">役員報酬 差引支給額（当月）</div>
+          <div class="value num">${netPay == null ? '—' : yen(netPay)}<span class="unit">円</span></div>
+        </div>
+        <div class="stat-tile">
+          <div class="label">滞留中の売掛金</div>
+          <div class="value num">${yen(agingTotal)}<span class="unit">円（${aging.length}件）</span></div>
+          ${aging.length === 0
+            ? `<div class="delta up">滞留なし</div>`
+            : `<div class="delta down">要確認</div>`}
+        </div>
+        <div class="stat-tile">
+          <div class="label">今期の未確定月数</div>
+          <div class="value num">${unfinalizedCount}<span class="unit">ヶ月</span></div>
+          ${unfinalizedCount === 0
+            ? `<div class="delta up">今期は全て確定済み</div>`
+            : `<div class="delta down">確定作業が必要です</div>`}
         </div>
       </div>
       <div style="margin-top:16px">
@@ -98,10 +154,60 @@ export function render(container, ctx) {
           : `<span class="badge warning">この月は未確定です</span>`}
       </div>
     </div>
-    <div class="card">
-      <h2>売上推移</h2>
-      <div class="card-note">${periodHeading}</div>
-      <div id="sales-trend"></div>
+
+    <div class="two-col">
+      <div class="card">
+        <h2>売上推移</h2>
+        <div class="card-note">${periodHeading}</div>
+        <div id="sales-trend"></div>
+      </div>
+      <div class="card">
+        <h2>得意先別の売上構成</h2>
+        <div class="card-note">${periodHeading}</div>
+        <div id="client-breakdown-chart"></div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <div class="card">
+        <h2>未回収の滞留</h2>
+        <div class="card-note">2ヶ月以上、売上計上済みで入金が確認できていない得意先です。</div>
+        ${aging.length === 0 ? `
+          <div class="card-note" style="margin:0">現在、滞留している得意先はありません。</div>
+        ` : `
+          <div style="display:flex;flex-direction:column">
+            ${aging.map((a) => `
+              <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--hairline)">
+                <span style="flex:1">${escapeHtml(a.name)}</span>
+                <span class="badge ${a.streak >= 3 ? 'critical' : 'warning'}">滞留 ${a.streak}ヶ月</span>
+                <span class="num" style="min-width:100px;text-align:right">${yen(a.balance)}<span style="font-size:11px;color:var(--ink-muted)">円</span></span>
+              </div>
+            `).join('')}
+          </div>
+        `}
+        <div class="toolbar" style="margin-top:10px">
+          <span class="spacer"></span>
+          <a class="btn ghost" href="#/ar">売掛金台帳を開く</a>
+        </div>
+      </div>
+      <div class="card">
+        <h2>証憑（${monthLabel(year, month)}）</h2>
+        <div class="card-note">Google Driveに保存された当月分の請求書・領収書の件数です。</div>
+        <div class="card-grid">
+          <div class="stat-tile">
+            <div class="label">請求書</div>
+            <div class="value num">${invoiceCount}<span class="unit">件</span></div>
+          </div>
+          <div class="stat-tile">
+            <div class="label">領収書</div>
+            <div class="value num">${receiptCount}<span class="unit">件</span></div>
+          </div>
+        </div>
+        <div class="toolbar" style="margin-top:10px">
+          <span class="spacer"></span>
+          <a class="btn ghost" href="#/report">月次レポートを開く</a>
+        </div>
+      </div>
     </div>
   `;
 
@@ -113,13 +219,33 @@ export function render(container, ctx) {
 
   if (clients.length === 0) {
     emptyChart(container.querySelector('#sales-trend'), '得意先が登録されるとここに表示されます');
+    emptyChart(container.querySelector('#client-breakdown-chart'), '得意先が登録されるとここに表示されます');
   } else {
-    const salesTotals = months.map((m) => monthSalesAndPayment(clients, m.year, m.month).sales);
-
+    const salesTotals = months.map((m) => (m.year * 12 + m.month > todayIdx ? null : monthSalesAndPayment(clients, m.year, m.month).sales));
     lineChart(container.querySelector('#sales-trend'), {
       xLabels,
       highlightIndex,
       series: [{ label: '売上合計', color: seriesColor(1), values: salesTotals }],
     });
+
+    const clientTotals = clients
+      .map((c) => {
+        const total = computeArLedger(c).reduce((a, r) => (monthKeys.has(`${r.year}-${r.month}`) ? a + r.sales : a), 0);
+        return { key: String(c.id), label: c.name, value: total };
+      })
+      .filter((x) => x.value > 0)
+      .sort((a, b) => b.value - a.value);
+
+    if (clientTotals.length === 0) {
+      emptyChart(container.querySelector('#client-breakdown-chart'), 'データがまだありません');
+    } else {
+      const folded = foldToFour(clientTotals);
+      donutChart(container.querySelector('#client-breakdown-chart'), {
+        centerLabel: '今期売上',
+        centerValue: fySalesSum,
+        size: 168,
+        segments: folded.map((s, i) => ({ label: s.label, color: seriesColor(i), value: s.value })),
+      });
+    }
   }
 }

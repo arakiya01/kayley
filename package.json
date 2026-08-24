@@ -1,0 +1,51 @@
+{
+  "name": "kayley",
+  "version": "1.0.0",
+  "description": "一人法人・個人事業主のための月次帳簿デスクトップアプリ",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:mac": "electron-builder --mac --publish=never",
+    "dist:win": "electron-builder --win --publish=never",
+    "dist:all": "electron-builder --mac --win --publish=never"
+  },
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "jp.alaland.kayley",
+    "productName": "Kayley",
+    "asar": true,
+    "files": [
+      "electron/**/*",
+      "index.html",
+      "js/**/*",
+      "css/**/*",
+      "vendor/**/*",
+      "assets/**/*",
+      "!**/*.md"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "mac": {
+      "target": ["zip"],
+      "category": "public.app-category.finance",
+      "icon": "build/icon.icns"
+    },
+    "win": {
+      "target": ["nsis"],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

@@ -1,10 +1,10 @@
 import {
   listClientsForMonth, listClientsForMonths,
-  upsertClient, getArEntry, upsertArEntry, computeArLedger, getMeta, getFoundingDate,
-  listAttachments, addAttachment, removeAttachment,
+  upsertClient, getArEntry, upsertArEntry, computeArLedger, unpaidStreak, getMeta, getFoundingDate,
+  listAttachments, addAttachment, removeAttachment, clientTradeAllowsMonth,
 } from '../db.js';
 import {
-  yen, monthShort, escapeHtml, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading,
+  yen, monthShort, escapeHtml, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading, todayYearMonth,
 } from '../format.js';
 import { renderMonthBar } from './monthbar.js';
 import { renderFySelector } from './fyselector.js';
@@ -12,21 +12,10 @@ import { enableGridPaste } from './gridpaste.js';
 import { lineChart, emptyChart } from '../charts.js';
 import { seriesColor, foldSeriesArrays } from '../colors.js';
 import * as gdrive from '../gdrive.js';
+import { fileChipHtml } from '../fileicon.js';
 
 let bulkMode = false;
 let bulkFyStartYear = null;
-
-function unpaidStreak(ledger, year, month) {
-  const idx = ledger.findIndex((r) => r.year === year && r.month === month);
-  if (idx === -1) return 0;
-  let streak = 0;
-  for (let i = idx; i >= 0; i--) {
-    const row = ledger[i];
-    if (row.opening > 0 && row.payment === 0) streak++;
-    else break;
-  }
-  return streak;
-}
 
 function agingBadge(streak) {
   if (streak >= 3) return `<span class="badge critical">滞留 ${streak}ヶ月</span>`;
@@ -79,16 +68,18 @@ export function render(container, ctx) {
         <h2>得意先を追加</h2>
         <div class="field-row">
           <div class="field-label">得意先名</div>
-          <input type="text" id="new-client-name" placeholder="例: 株式会社サンプル">
+          <div class="field-value"><input type="text" id="new-client-name" placeholder="例: 株式会社サンプル"></div>
         </div>
         <div class="field-row">
           <div class="field-label">通貨<span class="hint">海外送金の得意先はメモ欄に為替レートなど</span></div>
-          <input type="text" id="new-client-currency" value="JPY">
-          <input type="text" id="new-client-fx" placeholder="為替メモ（任意）">
+          <div class="field-value">
+            <input type="text" id="new-client-currency" value="JPY" style="flex:0 1 80px">
+            <input type="text" id="new-client-fx" placeholder="為替メモ（任意）">
+          </div>
         </div>
         <div class="field-row">
           <div class="field-label">開始時点の残高<span class="hint">このアプリで記録を始める時点の未回収残高</span></div>
-          <input type="number" id="new-client-balance" value="0">
+          <div class="field-value"><input type="number" id="new-client-balance" value="0"></div>
         </div>
         <div class="toolbar">
           <span class="spacer"></span>
@@ -150,10 +141,10 @@ export function render(container, ctx) {
         <thead>
           <tr>
             <th>得意先</th>
-            <th class="num">前月繰越</th>
-            <th class="num">売上</th>
-            <th class="num">入金</th>
-            <th class="num">当月残高</th>
+            <th class="num">前月繰越（円）</th>
+            <th class="num">売上（円）</th>
+            <th class="num">入金（円）</th>
+            <th class="num">当月残高（円）</th>
             <th>状況</th>
             <th class="no-print">請求書</th>
           </tr>
@@ -167,18 +158,20 @@ export function render(container, ctx) {
               <td class="num"><input type="number" class="payment-input" value="${entry.payment || 0}" data-client="${client.id}"></td>
               <td class="num closing-cell">${yen(closing)}</td>
               <td>${agingBadge(streak)}</td>
-              <td class="no-print invoice-cell" data-client="${client.id}" style="max-width:160px">
-                ${invoicesFor(client.id).map((it) => `
-                  <div style="display:flex;align-items:center;gap:4px;max-width:160px">
-                    ${it.web_view_link ? `<a href="${escapeHtml(it.web_view_link)}" target="_blank" rel="noopener" title="${escapeHtml(it.name)}" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${escapeHtml(it.name)}</a>` : `<span title="${escapeHtml(it.name)}" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${escapeHtml(it.name)}</span>`}
-                    <button class="btn ghost delete-invoice-btn" data-id="${it.id}" data-drive-id="${escapeHtml(it.drive_file_id)}" style="padding:1px 6px;font-size:11px;flex-shrink:0">×</button>
-                  </div>
-                `).join('')}
-                <label class="btn ghost" style="cursor:${gdriveConfigured ? 'pointer' : 'not-allowed'};${gdriveConfigured ? '' : 'opacity:0.45'};font-size:11px;padding:4px 8px;white-space:nowrap;display:inline-block">
-                  ＋請求書
-                  <input type="file" class="invoice-file-input" data-client="${client.id}" style="display:none" ${gdriveConfigured ? '' : 'disabled'}>
-                </label>
-                <span class="invoice-status card-note" style="margin:0;display:block;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" data-client="${client.id}"></span>
+              <td class="no-print invoice-cell" data-client="${client.id}" style="max-width:200px">
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                  <label class="btn ghost" style="cursor:${gdriveConfigured ? 'pointer' : 'not-allowed'};${gdriveConfigured ? '' : 'opacity:0.45'};font-size:11px;padding:4px 8px;white-space:nowrap;display:inline-block">
+                    ＋請求書
+                    <input type="file" class="invoice-file-input" data-client="${client.id}" style="display:none" ${gdriveConfigured ? '' : 'disabled'}>
+                  </label>
+                  ${invoicesFor(client.id).map((it) => `
+                    <span style="display:inline-flex;align-items:center;gap:2px">
+                      ${fileChipHtml({ name: it.name, webViewLink: it.web_view_link })}
+                      <button class="btn ghost delete-invoice-btn" data-id="${it.id}" data-drive-id="${escapeHtml(it.drive_file_id)}" style="padding:1px 5px;font-size:10px">×</button>
+                    </span>
+                  `).join('')}
+                </div>
+                <span class="invoice-status card-note" style="margin:0;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" data-client="${client.id}"></span>
               </td>
             </tr>
           `).join('')}
@@ -298,7 +291,7 @@ export function render(container, ctx) {
       fyStartYear: bulkFyStartYear,
       fyStartMonth,
       foundingDate: getFoundingDate(),
-      noteText: '1年度分の売上・入金をまとめて入力できます。',
+      noteText: '1年度分の売上・入金をまとめて入力できます（金額は円単位です）。',
       onChange: (newFyStartYear) => {
         bulkFyStartYear = newFyStartYear;
         renderBulkTable();
@@ -330,6 +323,8 @@ export function render(container, ctx) {
     const highlightIndex = months.findIndex((m) => m.year === year && m.month === month);
     const activeClients = listClientsForMonths(months);
     const xLabels = months.map((m) => `${m.month}月`);
+    const today = todayYearMonth();
+    const todayIdx = today.year * 12 + today.month;
 
     const salesSeriesRaw = activeClients.map((c) => {
       const ledger = computeArLedger(c);
@@ -337,7 +332,11 @@ export function render(container, ctx) {
       ledger.forEach((r) => { byKey[`${r.year}-${r.month}`] = r.sales; });
       return {
         key: String(c.id), label: c.name,
-        values: months.map((m) => byKey[`${m.year}-${m.month}`] || 0),
+        values: months.map((m) => {
+          if (m.year * 12 + m.month > todayIdx) return null;
+          if (!clientTradeAllowsMonth(c, m.year, m.month)) return null;
+          return byKey[`${m.year}-${m.month}`] || 0;
+        }),
       };
     });
 

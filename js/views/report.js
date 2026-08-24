@@ -1,11 +1,16 @@
 import {
-  listClientsForMonth, computeArLedger, getRentUtilityEntry, computeUtilityPersonalTotal,
+  listClientsForMonth, listClientsForMonths, computeArLedger, getRentUtilityEntry, computeUtilityPersonalTotal,
   getOfficerPayEntry, resolveOfficerDeductions, getMeta, getMonthStatus, prevMonth,
-  listAttachments, addAttachment, removeAttachment, getClient,
+  listAttachments, removeAttachment, getClient,
 } from '../db.js';
-import { yen, monthLabel, escapeHtml } from '../format.js';
+import {
+  yen, monthLabel, escapeHtml, fiscalYearStartOf, fiscalYearMonths,
+} from '../format.js';
 import { renderMonthBar } from './monthbar.js';
 import * as gdrive from '../gdrive.js';
+import { renderPdfInto } from '../pdfpreview.js';
+import { showMask, updateMask, hideMask } from '../uimask.js';
+import { fileChipHtml } from '../fileicon.js';
 
 const DEDUCTION_FIELDS = [
   { key: 'health_insurance', label: '健康保険' },
@@ -22,7 +27,6 @@ export function render(container, ctx) {
   const status = getMonthStatus(year, month);
   const finalized = !!(status && status.finalized);
   const prev = prevMonth(year, month);
-  const gdriveConfigured = !!getMeta('gdrive_client_id');
 
   const arRows = clients.map((c) => {
     const ledger = computeArLedger(c);
@@ -47,6 +51,43 @@ export function render(container, ctx) {
   const deductionTotal = (payEntry ? deductionRows.reduce((a, r) => a + r.value, 0) : 0) + deductions.rent_deduction + deductions.utility_deduction;
   const netPay = payEntry ? payEntry.gross_pay - deductionTotal : 0;
 
+  // 税理士向けサマリー: Kayleyに記録されている範囲の主要科目を、今期の月初〜当月分で累計する
+  // （税理士から送られてくる「残高試算表・損益計算書」と同じ科目名で突き合わせやすくするため）。
+  const fyStartMonth = Number(getMeta('fiscal_year_start_month') || 4);
+  const fyStartYear = fiscalYearStartOf(year, month, fyStartMonth);
+  const fyMonths = fiscalYearMonths(fyStartYear, fyStartMonth);
+  const uptoIndex = fyMonths.findIndex((m) => m.year === year && m.month === month);
+  const monthsToDate = uptoIndex >= 0 ? fyMonths.slice(0, uptoIndex + 1) : fyMonths;
+  const monthKeysToDate = new Set(monthsToDate.map((m) => `${m.year}-${m.month}`));
+
+  const salesThisMonth = arRows.reduce((a, r) => a + r.sales, 0);
+  const arClosingTotal = arRows.reduce((a, r) => a + r.closing, 0);
+  let salesFy = 0;
+  listClientsForMonths(fyMonths).forEach((c) => {
+    computeArLedger(c).forEach((r) => {
+      if (monthKeysToDate.has(`${r.year}-${r.month}`)) salesFy += r.sales;
+    });
+  });
+
+  const statutoryThisMonth = payEntry
+    ? (payEntry.health_insurance || 0) + (payEntry.nursing_care_insurance || 0)
+      + (payEntry.pension || 0) + (payEntry.child_support_levy || 0)
+    : 0;
+  let officerFy = 0, statutoryFy = 0;
+  monthsToDate.forEach((m) => {
+    const e = getOfficerPayEntry(m.year, m.month);
+    if (!e) return;
+    officerFy += e.gross_pay || 0;
+    statutoryFy += (e.health_insurance || 0) + (e.nursing_care_insurance || 0) + (e.pension || 0) + (e.child_support_levy || 0);
+  });
+
+  const rentThisMonth = rentEntry ? rentEntry.rent_total : 0;
+  let rentFy = 0;
+  monthsToDate.forEach((m) => {
+    const e = getRentUtilityEntry(m.year, m.month);
+    if (e) rentFy += e.rent_total || 0;
+  });
+
   container.innerHTML = `
     <div id="month-bar-slot" class="no-print"></div>
     <div class="toolbar no-print">
@@ -56,11 +97,30 @@ export function render(container, ctx) {
 
     <div class="card" style="display:flex;align-items:flex-start;justify-content:space-between;gap:20px">
       <div>
-        <div class="card-note" style="margin-bottom:2px">月次報告</div>
+        <div class="card-note" style="margin-bottom:2px">月次報告書</div>
         <h2 style="font-size:22px">${escapeHtml(companyName)}</h2>
         <div class="card-note">対象月: ${monthLabel(year, month)}</div>
+        <div class="card-note">作成日: ${new Date().toLocaleDateString('ja-JP')}</div>
       </div>
       ${finalized ? `<div class="stamp stamped" style="opacity:1">確定</div>` : ''}
+    </div>
+
+    <div class="card">
+      <h2>科目別集計</h2>
+      <div class="card-note no-print">この一覧はKayleyに記録されている金額から自動集計しています（税理士さんへの確認用）。</div>
+      <div class="card-note">※交際費・通信費・保険料など、一部の科目は含まれていません。</div>
+      <table class="ledger">
+        <thead>
+          <tr><th>勘定科目</th><th class="num">${monthLabel(year, month)}</th><th class="num">今期累計</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>売上高</td><td class="num">${yen(salesThisMonth)}</td><td class="num">${yen(salesFy)}</td></tr>
+          <tr><td>役員報酬</td><td class="num">${yen(payEntry ? payEntry.gross_pay : 0)}</td><td class="num">${yen(officerFy)}</td></tr>
+          <tr><td>法定福利費</td><td class="num">${yen(statutoryThisMonth)}</td><td class="num">${yen(statutoryFy)}</td></tr>
+          <tr><td>地代家賃</td><td class="num">${yen(rentThisMonth)}</td><td class="num">${yen(rentFy)}</td></tr>
+          <tr><td>売掛金残高（月末時点）</td><td class="num">${yen(arClosingTotal)}</td><td class="num">—</td></tr>
+        </tbody>
+      </table>
     </div>
 
     <div class="card">
@@ -126,16 +186,13 @@ export function render(container, ctx) {
     <div class="card">
       <h2>証憑（領収書・請求書）</h2>
       <div class="card-note no-print">
-        ${gdriveConfigured
-          ? `あなたのGoogleドライブの「Kayley」フォルダに、${monthLabel(year, month)}分として整理して保存されます（請求書は売掛金タブの各得意先からもアップロードできます）。`
-          : 'Google Driveが未設定です。「設定」タブから連携すると、ここでファイルをアップロードできます。'}
+        請求書は売掛金タブの各得意先から、領収書は「経費」タブからアップロードできます。
+        「読み込んで表示」を押すと、Googleドライブから中身を取得してこのレポートに埋め込みます（PDF出力にもそのまま含まれます）。
       </div>
       <div class="toolbar no-print">
-        <label class="btn ghost" style="cursor:${gdriveConfigured ? 'pointer' : 'not-allowed'};${gdriveConfigured ? '' : 'opacity:0.45'}">
-          ＋ 領収書を追加
-          <input type="file" id="attachment-file" multiple style="display:none" ${gdriveConfigured ? '' : 'disabled'}>
-        </label>
-        <span id="attachment-upload-status" class="card-note" style="margin:0"></span>
+        <span class="spacer"></span>
+        <button class="btn ghost" id="load-previews-btn">画像・PDFを読み込んで表示</button>
+        <span id="preview-status" class="card-note" style="margin:0"></span>
       </div>
       <div id="attachment-list"></div>
     </div>
@@ -145,9 +202,43 @@ export function render(container, ctx) {
     year, month, onChange: ctx.setMonth, showFinalize: true,
   });
 
-  container.querySelector('#print-btn').addEventListener('click', () => window.print());
+  let previewsLoaded = false;
+  let loadPromise = null;
+
+  // 画面を開いた時点・印刷ボタンを押した時点、どちらから呼ばれても実行中の読み込みを使い回す
+  // （同時に複数回走らせて二重取得・表示のちらつきが起きるのを防ぐ）。
+  function startLoadingPreviews() {
+    if (!loadPromise) {
+      loadPromise = loadPreviews().finally(() => { loadPromise = null; });
+    }
+    return loadPromise;
+  }
+
+  const printBtn = container.querySelector('#print-btn');
+  let printing = false;
+  printBtn.addEventListener('click', async () => {
+    if (printing) return;
+    printing = true;
+    printBtn.disabled = true;
+    try {
+      if (!previewsLoaded && listAttachments(year, month).length > 0) {
+        showMask('証憑を読み込んでいます…');
+        try {
+          await startLoadingPreviews();
+        } finally {
+          hideMask();
+        }
+      }
+      window.print();
+    } finally {
+      printBtn.disabled = false;
+      printing = false;
+    }
+  });
 
   function renderAttachmentList() {
+    previewsLoaded = false;
+    loadPromise = null;
     const items = listAttachments(year, month);
     const listEl = container.querySelector('#attachment-list');
     if (items.length === 0) {
@@ -159,22 +250,22 @@ export function render(container, ctx) {
       if (groupItems.length === 0) return '';
       return `
         <div class="card-note" style="margin:14px 0 4px">${label}</div>
-        <table class="ledger">
-          <tbody>
-            ${groupItems.map((it) => {
-              const client = it.client_id ? getClient(it.client_id) : null;
-              return `
-                <tr>
-                  <td>
-                    ${client ? `<span class="card-note" style="margin:0">${escapeHtml(client.name)}</span> ` : ''}
-                    ${it.web_view_link ? `<a href="${escapeHtml(it.web_view_link)}" target="_blank" rel="noopener">${escapeHtml(it.name)}</a>` : escapeHtml(it.name)}
-                  </td>
-                  <td class="num no-print"><button class="btn ghost delete-attachment-btn" data-id="${it.id}" data-drive-id="${escapeHtml(it.drive_file_id)}">削除</button></td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
+        ${groupItems.map((it) => {
+          const client = it.client_id ? getClient(it.client_id) : null;
+          return `
+            <div class="attachment-item" style="padding:10px 0;border-bottom:1px solid var(--hairline)">
+              <div style="display:flex;align-items:center;gap:10px">
+                ${fileChipHtml({ name: it.name, webViewLink: it.web_view_link })}
+                <span style="flex:1">
+                  ${client ? `<span class="card-note" style="margin:0">${escapeHtml(client.name)}</span> ` : ''}
+                  ${escapeHtml(it.name)}
+                </span>
+                <button class="btn ghost no-print delete-attachment-btn" data-id="${it.id}" data-drive-id="${escapeHtml(it.drive_file_id)}">削除</button>
+              </div>
+              <div class="attachment-preview" data-drive-id="${escapeHtml(it.drive_file_id)}" data-mime="${escapeHtml(it.mime_type || '')}" data-name="${escapeHtml(it.name)}"></div>
+            </div>
+          `;
+        }).join('')}
       `;
     };
 
@@ -199,32 +290,60 @@ export function render(container, ctx) {
 
   renderAttachmentList();
 
-  const fileInput = container.querySelector('#attachment-file');
-  if (fileInput) {
-    fileInput.addEventListener('change', async (e) => {
-      const files = Array.from(e.target.files || []);
-      if (files.length === 0) return;
-      const statusEl = container.querySelector('#attachment-upload-status');
-      for (const file of files) {
-        statusEl.textContent = `アップロード中… ${file.name}`;
-        try {
-          const uploaded = await gdrive.uploadFile(file, { year, month, category: 'receipt' });
-          addAttachment({
-            year, month,
-            drive_file_id: uploaded.id,
-            name: file.name,
-            mime_type: uploaded.mimeType,
-            web_view_link: uploaded.webViewLink,
-            category: 'receipt',
-          });
-        } catch (err) {
-          statusEl.textContent = `失敗: ${file.name}（${err.message}）`;
-          return;
+  // 画面を開いた時点で、すでに接続済みならバックグラウンドで先読みしておく
+  // （未接続の場合は何もしない＝印刷ボタンを押すまで接続を試みない、という既存の方針を維持）。
+  if (gdrive.isConnected() && listAttachments(year, month).length > 0) {
+    startLoadingPreviews();
+  }
+
+  function reportProgress(text) {
+    const statusEl = container.querySelector('#preview-status');
+    if (statusEl) statusEl.textContent = text;
+    updateMask(text);
+  }
+
+  async function loadPreviews() {
+    const btn = container.querySelector('#load-previews-btn');
+    const slots = Array.from(container.querySelectorAll('.attachment-preview'));
+    if (slots.length === 0) {
+      reportProgress('証憑がありません。');
+      return;
+    }
+    btn.disabled = true;
+    let done = 0;
+    for (const slot of slots) {
+      done += 1;
+      reportProgress(`読み込み中…（${done}/${slots.length}）`);
+      try {
+        const blob = await gdrive.downloadFile(slot.dataset.driveId);
+        const mime = slot.dataset.mime;
+        if (mime.startsWith('image/')) {
+          const url = URL.createObjectURL(blob);
+          slot.innerHTML = `<img src="${url}" alt="${slot.dataset.name}" style="max-width:100%;margin-top:8px;border:1px solid var(--grid-line);border-radius:3px">`;
+        } else if (mime === 'application/pdf') {
+          slot.innerHTML = '<div style="margin-top:8px"></div>';
+          await renderPdfInto(slot.firstElementChild, blob);
+        } else {
+          slot.innerHTML = `<div class="card-note" style="margin-top:6px">この形式はプレビューできません。上のリンクから開いてください。</div>`;
         }
+      } catch (err) {
+        slot.innerHTML = `<div class="card-note" style="margin-top:6px">読み込みに失敗しました: ${escapeHtml(err.message)}</div>`;
       }
-      statusEl.textContent = '';
-      fileInput.value = '';
-      renderAttachmentList();
+    }
+    reportProgress('');
+    btn.disabled = false;
+    previewsLoaded = true;
+  }
+
+  const loadPreviewsBtn = container.querySelector('#load-previews-btn');
+  if (loadPreviewsBtn) {
+    loadPreviewsBtn.addEventListener('click', async () => {
+      showMask('証憑を読み込んでいます…');
+      try {
+        await startLoadingPreviews();
+      } finally {
+        hideMask();
+      }
     });
   }
 }

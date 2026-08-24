@@ -41,7 +41,9 @@ function legendHtml(series) {
 
 /**
  * lineChart: 複数系列の折れ線グラフ。
- * opts: { xLabels: string[], series: [{label,color,values:number[]}], yFormat, height }
+ * opts: { xLabels: string[], series: [{label,color,values:(number|null)[]}], yFormat, height }
+ * values に null を入れると「まだデータが無い月」として扱われ、その点は打たず線もつながらない
+ * （将来の月を0円として描いてしまい違和感が出るのを避けるため）。
  */
 export function lineChart(container, opts) {
   const { xLabels, series, yFormat = yen, height = 220, highlightIndex = null } = opts;
@@ -55,8 +57,9 @@ export function lineChart(container, opts) {
   const plotW = width - padL - padR;
   const plotH = height - padT - padB;
 
-  const maxVal = niceMax(Math.max(1, ...series.flatMap(s => s.values)));
-  const minVal = Math.min(0, ...series.flatMap(s => s.values));
+  const knownValues = series.flatMap((s) => s.values).filter((v) => v != null);
+  const maxVal = niceMax(Math.max(1, ...knownValues));
+  const minVal = Math.min(0, ...knownValues);
 
   const svg = el('svg', { viewBox: `0 0 ${width} ${height}`, width: '100%', height, preserveAspectRatio: 'none', role: 'img' });
 
@@ -99,10 +102,26 @@ export function lineChart(container, opts) {
 
   const pointGroups = [];
   series.forEach((s) => {
-    const pts = s.values.map((v, i) => [x(i), y(v)]);
-    const d = pts.map((p, i) => (i === 0 ? `M ${p[0]} ${p[1]}` : `L ${p[0]} ${p[1]}`)).join(' ');
-    svg.appendChild(el('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linecap': 'round' }));
-    pts.forEach(([px, py], i) => {
+    // null（データ無し）の箇所で線を切る。連続した値がある区間だけをパスとして描く
+    let segment = [];
+    const flushSegment = () => {
+      if (segment.length >= 2) {
+        const d = segment.map((p, i) => (i === 0 ? `M ${p[0]} ${p[1]}` : `L ${p[0]} ${p[1]}`)).join(' ');
+        svg.appendChild(el('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linecap': 'round' }));
+      }
+      segment = [];
+    };
+    s.values.forEach((v, i) => {
+      if (v == null) { flushSegment(); return; }
+      segment.push([x(i), y(v)]);
+    });
+    flushSegment();
+
+    const pts = [];
+    s.values.forEach((v, i) => {
+      if (v == null) return;
+      const px = x(i), py = y(v);
+      pts.push([px, py]);
       const isCurrent = i === highlightIndex;
       svg.appendChild(el('circle', {
         cx: px, cy: py, r: isCurrent ? 5.5 : 3.4, fill: 'var(--card, #F7F1E3)',
@@ -128,7 +147,8 @@ export function lineChart(container, opts) {
     hoverLine.setAttribute('x1', x(i));
     hoverLine.setAttribute('x2', x(i));
     hoverLine.setAttribute('opacity', 1);
-    const rows = series.map((s, si) =>
+    // データが無い（取引期間外・未来月）系列はツールチップの行ごと出さない
+    const rows = series.filter((s) => s.values[i] != null).map((s) =>
       `<div class="t-row"><span><span class="t-swatch" style="background:${s.color}"></span>${s.label}</span><span class="num">${yFormat(s.values[i])}</span></div>`
     ).join('');
     tip.innerHTML = `<div style="margin-bottom:4px;font-weight:600">${xLabels[i]}</div>${rows}`;
@@ -137,8 +157,10 @@ export function lineChart(container, opts) {
     const bounds = wrap.getBoundingClientRect();
     const svgBounds = svg.getBoundingClientRect();
     const scale = svgBounds.width / width;
+    const tipW = tip.offsetWidth;
     let left = cx * scale + 12;
-    if (left + 170 > bounds.width) left = cx * scale - 170;
+    if (left + tipW > bounds.width) left = cx * scale - tipW - 12;
+    left = Math.max(0, Math.min(left, bounds.width - tipW));
     tip.style.left = `${left}px`;
     tip.style.top = `${padT * scale}px`;
   }
@@ -243,9 +265,11 @@ export function barChart(container, opts) {
       tip.style.display = 'block';
       const rect = svg.getBoundingClientRect();
       const scale = rect.width / width;
-      let left = b.cx * scale + 12;
       const bounds = wrap.getBoundingClientRect();
-      if (left + 170 > bounds.width) left = b.cx * scale - 170;
+      const tipW = tip.offsetWidth;
+      let left = b.cx * scale + 12;
+      if (left + tipW > bounds.width) left = b.cx * scale - tipW - 12;
+      left = Math.max(0, Math.min(left, bounds.width - tipW));
       tip.style.left = `${left}px`;
       tip.style.top = `${padT * scale}px`;
     });
