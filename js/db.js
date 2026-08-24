@@ -116,6 +116,50 @@ CREATE TABLE IF NOT EXISTS account_rules (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS bank_accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  csv_encoding TEXT,
+  csv_mapping_json TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  archived INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS bank_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bank_account_id INTEGER NOT NULL REFERENCES bank_accounts(id),
+  txn_date TEXT NOT NULL,
+  description TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  balance_after INTEGER,
+  fingerprint TEXT NOT NULL,
+  raw_row TEXT,
+  UNIQUE(bank_account_id, fingerprint)
+);
+
+CREATE TABLE IF NOT EXISTS bank_transaction_links (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bank_transaction_id INTEGER NOT NULL REFERENCES bank_transactions(id),
+  kind TEXT NOT NULL,
+  client_id INTEGER REFERENCES clients(id),
+  category TEXT,
+  period_start_year INTEGER,
+  period_start_month INTEGER,
+  period_end_year INTEGER,
+  period_end_month INTEGER,
+  note TEXT,
+  confirmed_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS bank_payee_aliases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  match_key TEXT NOT NULL UNIQUE,
+  kind TEXT NOT NULL,
+  client_id INTEGER REFERENCES clients(id),
+  category TEXT,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS theme_presets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT,
@@ -149,6 +193,13 @@ export const ACCOUNT_TITLES = [
   '通信費', '旅費交通費', '消耗品費', '新聞図書費', '会議費', '接待交際費',
   '広告宣伝費', '支払手数料', '外注費', '水道光熱費', '荷造運賃', '修繕費',
   '租税公課', '保険料', '諸会費', '雑費',
+];
+
+// 4タブのどれにも当たらない、不定型だが正体のはっきりした出金（源泉所得税の半年納付など）を
+// 分類するための固定リスト。一致するものが無ければ「その他」に寄せ、税理士側での確認を前提とする。
+export const IRREGULAR_CATEGORIES = [
+  '源泉所得税（納期の特例）', '住民税特別徴収', '法人税等予定納税',
+  '消費税中間納付', '労働保険年度更新', 'その他',
 ];
 
 // 摘要から対応ルールのキーを作る。全角/半角ゆれと空白ゆれだけ吸収し、
@@ -190,6 +241,7 @@ function migrateColumns() {
   ensureColumn('clients', 'trade_end_month', 'INTEGER');
   ensureColumn('month_status', 'report_exported_at', 'TEXT');
   ensureColumn('statement_transactions', 'account_title', 'TEXT');
+  ensureColumn('officer_pay_entries', 'employer_insurance_total', 'INTEGER');
 }
 
 export async function openDatabase() {
@@ -789,6 +841,123 @@ export function removeThemePreset(id) {
 
 export function exportBytes() {
   return db.export();
+}
+
+/* ---------------- 銀行口座・銀行取引（裏付け専用。既存4タブへは書き込まない） ---------------- */
+
+export function listBankAccounts({ includeArchived = false } = {}) {
+  const sql = includeArchived
+    ? 'SELECT * FROM bank_accounts ORDER BY sort_order, id'
+    : 'SELECT * FROM bank_accounts WHERE archived = 0 ORDER BY sort_order, id';
+  return all(sql);
+}
+
+export function upsertBankAccount(account) {
+  if (account.id) {
+    run(
+      'UPDATE bank_accounts SET name=?, csv_encoding=?, csv_mapping_json=? WHERE id=?',
+      [account.name, account.csv_encoding || null, account.csv_mapping_json || null, account.id]
+    );
+    return account.id;
+  }
+  const maxOrder = one('SELECT COALESCE(MAX(sort_order), -1) AS m FROM bank_accounts').m;
+  run(
+    'INSERT INTO bank_accounts (name, csv_encoding, csv_mapping_json, sort_order) VALUES (?, ?, ?, ?)',
+    [account.name, account.csv_encoding || null, account.csv_mapping_json || null, maxOrder + 1]
+  );
+  return one('SELECT last_insert_rowid() AS id').id;
+}
+
+export function archiveBankAccount(id, archived = 1) {
+  run('UPDATE bank_accounts SET archived=? WHERE id=?', [archived, id]);
+}
+
+// 銀行取引の重複検出キー。口座・日付・金額・摘要・残高・同一内容行の出現順から作る。
+// 同日同額同摘要の正当な複数取引を区別するため、出現順（occurrence）を材料に含める。
+export function bankTransactionFingerprint({ txn_date, amount, description, balance_after, occurrence }) {
+  return [txn_date, amount, description, balance_after ?? '', occurrence ?? 0].join('|');
+}
+
+// 取込確定。既存の指紋と一致する行はスキップする（再取込での重複を防ぐ）。
+export function importBankTransactions(bankAccountId, rows) {
+  let imported = 0;
+  let skipped = 0;
+  rows.forEach((row) => {
+    const fingerprint = bankTransactionFingerprint(row);
+    const existing = one(
+      'SELECT id FROM bank_transactions WHERE bank_account_id=? AND fingerprint=?',
+      [bankAccountId, fingerprint]
+    );
+    if (existing) { skipped += 1; return; }
+    run(
+      `INSERT INTO bank_transactions (bank_account_id, txn_date, description, amount, balance_after, fingerprint, raw_row)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [bankAccountId, row.txn_date, row.description, row.amount, row.balance_after ?? null, fingerprint, row.raw_row || null]
+    );
+    imported += 1;
+  });
+  return { imported, skipped };
+}
+
+export function listBankTransactions(bankAccountId, { onlyUnlinked = false } = {}) {
+  const sql = onlyUnlinked
+    ? `SELECT t.* FROM bank_transactions t
+       WHERE t.bank_account_id=? AND NOT EXISTS (SELECT 1 FROM bank_transaction_links l WHERE l.bank_transaction_id = t.id)
+       ORDER BY t.txn_date, t.id`
+    : 'SELECT * FROM bank_transactions WHERE bank_account_id=? ORDER BY txn_date, id';
+  return all(sql, [bankAccountId]);
+}
+
+export function listAllBankTransactions() {
+  return all(
+    `SELECT t.*, a.name AS account_name FROM bank_transactions t
+     JOIN bank_accounts a ON a.id = t.bank_account_id
+     ORDER BY t.txn_date DESC, t.id DESC`
+  );
+}
+
+/* ---------------- 銀行取引のリンク（裏付け先の記録） ---------------- */
+
+export function linkBankTransaction({
+  bank_transaction_id, kind, client_id, category,
+  period_start_year, period_start_month, period_end_year, period_end_month, note,
+}) {
+  run(
+    `INSERT INTO bank_transaction_links
+       (bank_transaction_id, kind, client_id, category, period_start_year, period_start_month, period_end_year, period_end_month, note, confirmed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [bank_transaction_id, kind, client_id || null, category || null,
+     period_start_year || null, period_start_month || null, period_end_year || null, period_end_month || null,
+     note || null, new Date().toISOString()]
+  );
+  return one('SELECT last_insert_rowid() AS id').id;
+}
+
+export function unlinkBankTransaction(linkId) {
+  run('DELETE FROM bank_transaction_links WHERE id=?', [linkId]);
+}
+
+export function listBankTransactionLinks(bankTransactionId) {
+  return all('SELECT * FROM bank_transaction_links WHERE bank_transaction_id=? ORDER BY id', [bankTransactionId]);
+}
+
+/* ---------------- 振込名義の学習（account_rules と同じ設計。accountMatchKey()を再利用） ---------------- */
+
+export function learnBankPayeeAlias(description, { kind, client_id, category }) {
+  if (!kind) return;
+  const matchKey = accountMatchKey(description);
+  if (!matchKey) return;
+  run(
+    `INSERT INTO bank_payee_aliases (match_key, kind, client_id, category, updated_at) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(match_key) DO UPDATE SET kind=excluded.kind, client_id=excluded.client_id, category=excluded.category, updated_at=excluded.updated_at`,
+    [matchKey, kind, client_id || null, category || null, new Date().toISOString()]
+  );
+}
+
+export function getBankPayeeAlias(description) {
+  const matchKey = accountMatchKey(description);
+  if (!matchKey) return null;
+  return one('SELECT kind, client_id, category FROM bank_payee_aliases WHERE match_key=?', [matchKey]);
 }
 
 export async function importBytes(bytes) {
