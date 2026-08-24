@@ -1,6 +1,6 @@
 import {
   getRentUtilityEntry, findPreviousRentUtilityEntry, upsertRentUtilityEntry,
-  computeUtilityPersonalTotal, getMeta, getFoundingDate,
+  computeUtilityPersonalTotal, computeRentBackingStatus, getMeta, getFoundingDate,
 } from '../db.js';
 import {
   yen, monthLabel, monthShort, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading, todayYearMonth,
@@ -9,6 +9,7 @@ import { renderFySelector } from './fyselector.js';
 import { enableGridPaste } from './gridpaste.js';
 import { lineChart } from '../charts.js';
 import { changeStrip } from '../changestrip.js';
+import { bankBadgeHtml } from '../bankbadge.js';
 import { seriesColor } from '../colors.js';
 import { parseCurrencyInput, enableCurrencyInput } from '../currencyinput.js';
 
@@ -43,7 +44,7 @@ export function render(container, ctx) {
       <div class="rent-document-grid">
       <div class="card rent-card">
         <div class="card-header">
-          <h2>家賃</h2>
+          <div class="card-header-title"><h2>家賃</h2><span id="rent-bank-badge"></span></div>
           <div class="toolbar"><button class="btn ghost bulk-toggle-btn">📋 一括入力（年度）</button></div>
         </div>
         <div id="carry-notice-slot"></div>
@@ -175,6 +176,7 @@ export function render(container, ctx) {
     const utilityPersonalTotal = computeUtilityPersonalTotal(entry);
     container.querySelector('#utility-personal-total').innerHTML = `${yen(utilityPersonalTotal)}<span class="unit">円</span>`;
     container.querySelector('#grand-personal-total').innerHTML = `${yen(utilityPersonalTotal + entry.rent_personal_fixed)}<span class="unit">円</span>`;
+    container.querySelector('#rent-bank-badge').innerHTML = bankBadgeHtml(computeRentBackingStatus(year, month));
   }
 
   // タブを開いただけ（未入力）では保存しない。実際に値を変更したときだけ upsert する
