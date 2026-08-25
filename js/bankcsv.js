@@ -66,13 +66,24 @@ export function parseSignedAmount(raw) {
 }
 
 // YYYY/MM/DD, YYYY-MM-DD, YYYY年MM月DD日 の表記を YYYY-MM-DD に正規化する。解析できなければ null。
+// 西暦4桁が無ければ、令和の元号年（例: 「08-06-26」＝令和8年6月26日）として解釈する
+// （信用金庫のWeb照会CSV等で、元号の文字を付けずに数字だけの2桁で年を表すことがあるため）。
+// 令和1年=2019年なので、西暦 = 令和年 + 2018。
 export function parseCsvDate(raw) {
   if (raw == null) return null;
   const s = toHalfWidthDigits(String(raw)).trim();
-  const m = s.match(/^(\d{4})[/\-年](\d{1,2})[/\-月](\d{1,2})日?$/);
-  if (!m) return null;
-  const [, y, mo, d] = m;
-  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const seireki = s.match(/^(\d{4})[/\-年](\d{1,2})[/\-月](\d{1,2})日?$/);
+  if (seireki) {
+    const [, y, mo, d] = seireki;
+    return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+  const reiwa = s.match(/^(\d{1,2})[/\-年](\d{1,2})[/\-月](\d{1,2})日?$/);
+  if (reiwa) {
+    const [, ry, mo, d] = reiwa;
+    const year = Number(ry) + 2018;
+    return `${year}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+  return null;
 }
 
 // 列マッピングを1行分のセル配列に適用し、bank_transactions への取込候補に変換する。
@@ -80,26 +91,59 @@ export function parseCsvDate(raw) {
 // amountCol が指定されていれば符号付き1列として扱い、無ければ depositCol/withdrawalCol の2列から符号を作る。
 export function mapCsvRow(cells, mapping) {
   const txn_date = parseCsvDate(cells[mapping.dateCol]);
+
+  let amount = null;
+  // 一部の銀行（信用金庫のWeb照会CSV等）は、支払/預り金額のうち使わない側の列に
+  // 「摘要」ではなく相手先名を入れてくる（出金なら預り金額欄に、入金なら支払金額欄に）。
+  // 数値として読めなかった側の生の文字列を、相手先名の手がかりとして拾っておく。
+  let counterpartyFromAmountCol = null;
+  if (mapping.amountCol != null) {
+    amount = parseSignedAmount(cells[mapping.amountCol]);
+  } else {
+    const depositRaw = mapping.depositCol != null ? cells[mapping.depositCol] : undefined;
+    const withdrawalRaw = mapping.withdrawalCol != null ? cells[mapping.withdrawalCol] : undefined;
+    const deposit = depositRaw != null ? parseSignedAmount(depositRaw) : null;
+    const withdrawal = withdrawalRaw != null ? parseSignedAmount(withdrawalRaw) : null;
+    if (deposit != null && deposit !== 0) {
+      amount = Math.abs(deposit);
+      if (withdrawalRaw && withdrawal == null && withdrawalRaw.trim() !== '') counterpartyFromAmountCol = withdrawalRaw.trim();
+    } else if (withdrawal != null && withdrawal !== 0) {
+      amount = -Math.abs(withdrawal);
+      if (depositRaw && deposit == null && depositRaw.trim() !== '') counterpartyFromAmountCol = depositRaw.trim();
+    } else if (deposit === 0 || withdrawal === 0) {
+      amount = 0;
+    }
+  }
+
   const descParts = [mapping.descCol, mapping.payerCol]
     .filter((c) => c != null)
     .map((c) => cells[c])
     .filter(Boolean);
+  if (counterpartyFromAmountCol) descParts.push(counterpartyFromAmountCol);
   const description = descParts.join(' ').trim();
-
-  let amount = null;
-  if (mapping.amountCol != null) {
-    amount = parseSignedAmount(cells[mapping.amountCol]);
-  } else {
-    const deposit = mapping.depositCol != null ? parseSignedAmount(cells[mapping.depositCol]) : null;
-    const withdrawal = mapping.withdrawalCol != null ? parseSignedAmount(cells[mapping.withdrawalCol]) : null;
-    if (deposit != null && deposit !== 0) amount = Math.abs(deposit);
-    else if (withdrawal != null && withdrawal !== 0) amount = -Math.abs(withdrawal);
-    else if (deposit === 0 || withdrawal === 0) amount = 0;
-  }
 
   const balance_after = mapping.balanceCol != null ? parseSignedAmount(cells[mapping.balanceCol]) : null;
   const valid = !!txn_date && !!description && amount != null;
   return { txn_date, description, amount, balance_after, valid, raw_row: JSON.stringify(cells) };
+}
+
+// 一部の銀行のCSVは、本題の明細表の前に「口座情報」など列数の異なる別表が
+// 入っていることがある（例: 信用金庫のWeb照会CSVで、お取引店・科目・口座番号・
+// 口座名義人の4列の表→空行→年月日・摘要・…の5列の明細表、という2段構成になっている）。
+// 本題の表を機械的に見つけるため、全行の列数のうち最も多く出現する列数
+// （＝明細行の列数）を求め、その列数を持つ最初の行を見出し行とみなす。
+// 前置きの別表はそれより前にあるので自動的に無視される。
+export function splitHeaderAndRows(table) {
+  if (table.length === 0) return { header: [], dataRows: [] };
+  const counts = new Map();
+  table.forEach((row) => counts.set(row.length, (counts.get(row.length) || 0) + 1));
+  let modalLength = table[0].length;
+  let modalCount = 0;
+  counts.forEach((count, length) => {
+    if (count > modalCount) { modalCount = count; modalLength = length; }
+  });
+  const headerIndex = table.findIndex((row) => row.length === modalLength);
+  return { header: table[headerIndex] || [], dataRows: table.slice(headerIndex + 1) };
 }
 
 // マッピング済みの行配列に、口座内の連番（同一日・同一金額・同一摘要の出現順）を振る。

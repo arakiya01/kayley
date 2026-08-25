@@ -7,7 +7,7 @@ import {
   officerWithholdingPeriodFor, derivePeriodForKind, IRREGULAR_CATEGORIES, listClients, listPaymentSources,
 } from '../db.js';
 import { escapeHtml, yen } from '../format.js';
-import { decodeCsvBytes, parseCsvText, mapCsvRow, assignOccurrenceIndex, verifyRunningBalance } from '../bankcsv.js';
+import { decodeCsvBytes, parseCsvText, mapCsvRow, assignOccurrenceIndex, verifyRunningBalance, splitHeaderAndRows } from '../bankcsv.js';
 
 let openAccountId = null;
 let transactionFilter = 'all'; // 'all' | 'unlinked' | 'linked'
@@ -134,8 +134,8 @@ export function render(container) {
 
   function showMappingForm(accountId, account, table, encoding) {
     const slot = container.querySelector('#mapping-slot');
-    const header = table[0];
-    const previewRows = table.slice(0, 4);
+    const { header, dataRows: previewSource } = splitHeaderAndRows(table);
+    const previewRows = previewSource.slice(0, 4);
     // allowEmpty=true の項目は「（使わない）」を既定選択にする。末尾に追加するだけだと
     // ブラウザの既定動作で先頭の列（日付列など）が誤って選択されたままになってしまうため。
     const colOptions = (allowEmpty) => header.map((_, i) => `<option value="${i}">列${i + 1}: ${escapeHtml(header[i] || '')}</option>`).join('')
@@ -173,7 +173,7 @@ export function render(container) {
   }
 
   function commitImport(accountId, account, table, mapping, encoding) {
-    const dataRows = table.slice(1);
+    const { dataRows } = splitHeaderAndRows(table);
     const mapped = dataRows.map((cells) => mapCsvRow(cells, mapping));
     const invalidCount = mapped.filter((r) => !r.valid).length;
     const validRows = mapped.filter((r) => r.valid);
