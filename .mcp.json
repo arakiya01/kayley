@@ -1,10 +1,9 @@
 {
   "mcpServers": {
     "graft": {
-      "command": "/home/lima.guest/.local/share/mise/installs/node/18.15.0/bin/node",
+      "command": "bash",
       "args": [
-        "/home/lima.guest/.local/share/mise/installs/node/18.15.0/lib/node_modules/@nanonets/graft/dist/cli.js",
-        "mcp"
+        "${CLAUDE_PROJECT_DIR}/.claude/helpers/graft-mcp.sh"
       ]
     }
   }
