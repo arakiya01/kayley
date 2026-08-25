@@ -815,15 +815,15 @@ input.carried { border-style: dashed; border-color: var(--status-warning); color
 .change-label { font-size: 13.5px; font-weight: 700; color: var(--ink); }
 .change-summary { font-size: 12px; color: var(--ink-muted); }
 .change-cells { display: flex; gap: 4px; flex-wrap: wrap; }
-.change-cell { flex: 1 1 62px; min-width: 62px; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 4px; border: 1px solid var(--grid-line); border-radius: var(--radius); background: var(--card-raised); }
+.change-cell { flex: 1 1 62px; min-width: 62px; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; border: 1px solid var(--grid-line); border-radius: var(--radius); background: var(--card-raised); }
 .change-cell .m { font-size: 10.5px; color: var(--ink-muted); }
-.change-cell .v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 12px; color: var(--ink); }
-.change-cell.same .v { color: var(--ink-muted); }
+.change-cell .v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 700; color: var(--ink); }
+.change-cell .d { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 10px; }
+.change-cell .d.up { color: var(--status-good); }
+.change-cell .d.down { color: var(--status-critical); }
+.change-cell .d.same { color: var(--ink-muted); }
 .change-cell.none { opacity: 0.4; }
 .change-cell.none .v { color: var(--ink-muted); }
-.change-cell.diff { border-color: var(--status-warning); background: var(--card); }
-.change-cell.diff .v { color: var(--status-warning); font-weight: 700; }
-.change-cell.base .v { font-weight: 700; }
 .change-cell.current { box-shadow: 0 0 0 1.5px var(--hanko) inset; }
 
 /* empty states */

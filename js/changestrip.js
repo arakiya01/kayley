@@ -1,9 +1,10 @@
 import { yen } from './format.js';
 
-// 「前月と同じかどうか」だけを見せる帯。
-// 定期同額給与の役員報酬や、契約で固定の家賃のように「変わらないのが正常」なものは、
-// 折れ線グラフにすると必ず平坦になって情報を持たない。
-// ここでは同じ月は静かに＝で示し、変わった月だけ差額を出して異常として拾えるようにする。
+// 「前月からどれだけ変わったか」を見せる帯。
+// 主表示は実額（yen(value)）にし、前月からの増減はセルの下に小さく緑（増）/赤（減）で添える。
+// 変わらない月は増減欄を「±0」で示す（緑にも赤にもしない）。
+// 定期同額給与の役員報酬や、契約で固定の家賃のように「変わらないのが正常」なものでも、
+// 実額そのものは常に見えるようにしたいというフィードバックを反映している。
 // xLabels はセルに出す短いラベル（「4月」）。fullLabels は要約とツールチップに使う
 // 年つきのラベル（「2026年4月」）で、省略すると xLabels をそのまま使う。
 export function changeStrip(container, { xLabels, fullLabels, highlightIndex, rows }) {
@@ -15,27 +16,32 @@ export function changeStrip(container, { xLabels, fullLabels, highlightIndex, ro
     const cells = row.values.map((value, index) => {
       const classes = ['change-cell'];
       if (index === highlightIndex) classes.push('current');
-      let display = '—';
+      let valueDisplay = '—';
+      let delta = '';
       if (value == null) {
         classes.push('none');
       } else if (previous == null) {
         classes.push('base');
-        display = yen(value);
+        valueDisplay = `${yen(value)}円`;
         base = value;
         previous = value;
       } else if (value === previous) {
         classes.push('same');
-        display = '＝';
+        valueDisplay = `${yen(value)}円`;
+        delta = `<span class="d same">±0</span>`;
         previous = value;
       } else {
-        classes.push('diff');
         const difference = value - previous;
-        display = difference > 0 ? `+${yen(difference)}` : `−${yen(Math.abs(difference))}`;
-        differences.push({ label: longLabels[index], display });
+        const up = difference > 0;
+        classes.push(up ? 'up' : 'down');
+        valueDisplay = `${yen(value)}円`;
+        const differenceDisplay = up ? `+${yen(difference)}` : `−${yen(Math.abs(difference))}`;
+        delta = `<span class="d ${up ? 'up' : 'down'}">${differenceDisplay}円</span>`;
+        differences.push({ label: longLabels[index], display: differenceDisplay });
         previous = value;
       }
       const title = value == null ? `${longLabels[index]}：データなし` : `${longLabels[index]}：${yen(value)}円`;
-      return `<div class="${classes.join(' ')}" title="${title}"><span class="m">${xLabels[index]}</span><span class="v">${display}</span></div>`;
+      return `<div class="${classes.join(' ')}" title="${title}"><span class="m">${xLabels[index]}</span><span class="v">${valueDisplay}</span>${delta}</div>`;
     }).join('');
     let summary = base == null ? 'データなし' : `変化なし・${yen(base)}円`;
     if (differences.length) {
