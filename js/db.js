@@ -50,6 +50,14 @@ CREATE TABLE IF NOT EXISTS rent_utility_entries (
   UNIQUE(year, month)
 );
 
+CREATE TABLE IF NOT EXISTS officers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  archived INTEGER NOT NULL DEFAULT 0,
+  home_office_deduction INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS officer_pay_entries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   year INTEGER NOT NULL,
@@ -242,6 +250,41 @@ function migrateColumns() {
   ensureColumn('month_status', 'report_exported_at', 'TEXT');
   ensureColumn('statement_transactions', 'account_title', 'TEXT');
   ensureColumn('officer_pay_entries', 'employer_insurance_total', 'INTEGER');
+  ensureColumn('officer_pay_entries', 'officer_id', 'INTEGER');
+  ensureColumn('rent_utility_entries', 'employer_insurance_total', 'INTEGER');
+  ensureColumn('bank_transaction_links', 'officer_id', 'INTEGER REFERENCES officers(id)');
+}
+
+// 既存の officer_pay_entries（officer_id が無かった旧データ）を「代表者」役員に紐づけ、
+// employer_insurance_total（会社全体の値）を rent_utility_entries へ複製する。
+// 一度移行が終われば legacyCount は常に0になるので、毎回呼んでも安全（ensureColumnと同じ設計）。
+// 新規インストール（officer_pay_entries が空）では「代表者」を自動作成しない。
+function migrateOfficers() {
+  const legacyCount = one('SELECT COUNT(*) AS n FROM officer_pay_entries WHERE officer_id IS NULL').n;
+  if (legacyCount === 0) return;
+
+  const officerCount = one('SELECT COUNT(*) AS n FROM officers').n;
+  let primaryId;
+  if (officerCount === 0) {
+    run('INSERT INTO officers (name, sort_order, archived, home_office_deduction) VALUES (?, 0, 0, 1)', ['代表者']);
+    primaryId = one('SELECT last_insert_rowid() AS id').id;
+  } else {
+    primaryId = one('SELECT id FROM officers ORDER BY sort_order, id LIMIT 1').id;
+  }
+
+  run('UPDATE officer_pay_entries SET officer_id=? WHERE officer_id IS NULL', [primaryId]);
+
+  all(
+    'SELECT year, month, employer_insurance_total FROM officer_pay_entries WHERE officer_id=? AND employer_insurance_total IS NOT NULL AND employer_insurance_total != 0',
+    [primaryId]
+  ).forEach((row) => {
+    const existing = getRentUtilityEntry(row.year, row.month);
+    if (existing) {
+      run('UPDATE rent_utility_entries SET employer_insurance_total=? WHERE year=? AND month=?', [row.employer_insurance_total, row.year, row.month]);
+    } else {
+      run('INSERT INTO rent_utility_entries (year, month, employer_insurance_total) VALUES (?, ?, ?)', [row.year, row.month, row.employer_insurance_total]);
+    }
+  });
 }
 
 export async function openDatabase() {
@@ -254,6 +297,7 @@ export async function openDatabase() {
   }
   db.run(SCHEMA);
   migrateColumns();
+  migrateOfficers();
   for (const [k, v] of Object.entries(DEFAULT_META)) {
     db.run('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)', [k, v]);
   }
@@ -440,6 +484,35 @@ export function upsertClient(client) {
 
 export function archiveClient(id, archived = 1) {
   run('UPDATE clients SET archived=? WHERE id=?', [archived, id]);
+}
+
+export function listOfficers({ includeArchived = false } = {}) {
+  return includeArchived
+    ? all('SELECT * FROM officers ORDER BY sort_order, id')
+    : all('SELECT * FROM officers WHERE archived=0 ORDER BY sort_order, id');
+}
+
+export function getOfficer(id) {
+  return one('SELECT * FROM officers WHERE id=?', [id]);
+}
+
+export function upsertOfficer(officer) {
+  if (officer.id) {
+    run(
+      'UPDATE officers SET name=?, home_office_deduction=? WHERE id=?',
+      [officer.name, officer.home_office_deduction ? 1 : 0, officer.id]
+    );
+    return officer.id;
+  }
+  run(
+    'INSERT INTO officers (name, sort_order, archived, home_office_deduction) VALUES (?, ?, 0, ?)',
+    [officer.name, officer.sort_order || 0, officer.home_office_deduction ? 1 : 0]
+  );
+  return one('SELECT last_insert_rowid() AS id').id;
+}
+
+export function archiveOfficer(id, archived = 1) {
+  run('UPDATE officers SET archived=? WHERE id=?', [archived ? 1 : 0, id]);
 }
 
 /* ---------------- payment sources (カード・現金) ---------------- */
@@ -1100,6 +1173,7 @@ export async function importBytes(bytes) {
   db = new SQL.Database(bytes);
   db.run(SCHEMA);
   migrateColumns();
+  migrateOfficers();
   for (const [k, v] of Object.entries(DEFAULT_META)) {
     db.run('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)', [k, v]);
   }
