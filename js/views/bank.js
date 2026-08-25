@@ -5,16 +5,21 @@ import {
   listBankAccounts, upsertBankAccount, archiveBankAccount, importBankTransactions,
   listBankTransactions, listBankTransactionLinks, linkBankTransaction, unlinkBankTransaction,
   officerWithholdingPeriodFor, derivePeriodForKind, IRREGULAR_CATEGORIES, listClients, listOfficers, listPaymentSources,
-  accountMatchKey,
+  accountMatchKey, updateBankTransactionDescription, getMeta,
 } from '../db.js';
-import { escapeHtml, yen } from '../format.js';
+import { escapeHtml, yen, fiscalYearStartOf, fiscalYearMonths } from '../format.js';
 import { decodeCsvBytes, parseCsvText, mapCsvRow, assignOccurrenceIndex, verifyRunningBalance, splitHeaderAndRows } from '../bankcsv.js';
 
 let openAccountId = null;
 let transactionFilter = 'all'; // 'all' | 'unlinked' | 'linked'
+let periodFilter = 'month'; // 'month' | 'fy' | 'range' | 'all'
+let rangeFrom = '';
+let rangeTo = '';
+let searchText = '';
 
-export function render(container) {
+export function render(container, ctx) {
   const accounts = listBankAccounts({ includeArchived: true });
+  const fyStartMonth = Number(getMeta('fiscal_year_start_month') || 4);
 
   container.innerHTML = `
     <div class="card">
@@ -22,7 +27,7 @@ export function render(container) {
         <h2>口座</h2>
         <div class="toolbar"><button class="btn ghost" id="add-account-btn">＋ 口座を追加</button></div>
       </div>
-      <div class="card-note">銀行のCSV明細を取り込んで、売掛金・家賃・役員報酬の入力値と照合します。銀行データはここに保存されるだけで、他のタブの数字を書き換えることはありません。</div>
+      <div class="card-note">銀行のCSV明細を取り込んで、売掛金・家賃・役員報酬の入力値と照合します。銀行データはここに保存されるだけで、他のタブの数字を書き換えることはありません。完了印は、この月の明細が1件以上あり、すべて分類済みになると付きます。</div>
       <div id="account-list-slot"></div>
     </div>
     <div id="add-account-form-slot"></div>
@@ -56,9 +61,30 @@ export function render(container) {
       const id = upsertBankAccount({ name });
       slot.innerHTML = '';
       openAccountId = id;
-      render(container);
+      render(container, ctx);
     });
   });
+
+  function periodRange() {
+    if (periodFilter === 'month') {
+      const mm = String(ctx.month).padStart(2, '0');
+      return { from: `${ctx.year}-${mm}-01`, to: `${ctx.year}-${mm}-31` };
+    }
+    if (periodFilter === 'fy') {
+      const fyStart = fiscalYearStartOf(ctx.year, ctx.month, fyStartMonth);
+      const months = fiscalYearMonths(fyStart, fyStartMonth);
+      const first = months[0];
+      const last = months[11];
+      return {
+        from: `${first.year}-${String(first.month).padStart(2, '0')}-01`,
+        to: `${last.year}-${String(last.month).padStart(2, '0')}-31`,
+      };
+    }
+    if (periodFilter === 'range') {
+      return { from: rangeFrom || null, to: rangeTo || null };
+    }
+    return { from: null, to: null };
+  }
 
   function renderAccountList() {
     const slot = container.querySelector('#account-list-slot');
@@ -84,7 +110,7 @@ export function render(container) {
     slot.querySelectorAll('.archive-account-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         archiveBankAccount(Number(btn.dataset.id), btn.dataset.archived === '1' ? 0 : 1);
-        render(container);
+        render(container, ctx);
       });
     });
     slot.querySelectorAll('.open-account-btn').forEach((btn) => {
@@ -199,10 +225,15 @@ export function render(container) {
     const slot = container.querySelector('#transaction-list-slot');
     const all = listBankTransactions(accountId);
     const linksByTxn = new Map(all.map((t) => [t.id, listBankTransactionLinks(t.id)]));
+    const { from, to } = periodRange();
+    const searchKey = searchText ? accountMatchKey(searchText) : '';
     const rows = all.filter((t) => {
       const links = linksByTxn.get(t.id);
-      if (transactionFilter === 'unlinked') return links.length === 0;
-      if (transactionFilter === 'linked') return links.length > 0;
+      if (transactionFilter === 'unlinked' && links.length !== 0) return false;
+      if (transactionFilter === 'linked' && links.length === 0) return false;
+      if (from && t.txn_date < from) return false;
+      if (to && t.txn_date > to) return false;
+      if (searchKey && !accountMatchKey(t.description).includes(searchKey)) return false;
       return true;
     });
     const clients = listClients({ includeArchived: true });
@@ -213,6 +244,18 @@ export function render(container) {
         <div class="card-header">
           <h2>明細</h2>
           <div class="toolbar">
+            <select id="period-filter">
+              <option value="month" ${periodFilter === 'month' ? 'selected' : ''}>選択中の月</option>
+              <option value="fy" ${periodFilter === 'fy' ? 'selected' : ''}>選択中の期</option>
+              <option value="range" ${periodFilter === 'range' ? 'selected' : ''}>期間を指定</option>
+              <option value="all" ${periodFilter === 'all' ? 'selected' : ''}>すべての期間</option>
+            </select>
+            ${periodFilter === 'range' ? `
+              <input type="date" id="range-from" value="${rangeFrom}">
+              <span>〜</span>
+              <input type="date" id="range-to" value="${rangeTo}">
+            ` : ''}
+            <input type="text" id="desc-search" placeholder="摘要を検索" value="${escapeHtml(searchText)}" style="width:140px">
             <select id="txn-filter">
               <option value="all" ${transactionFilter === 'all' ? 'selected' : ''}>すべて</option>
               <option value="unlinked" ${transactionFilter === 'unlinked' ? 'selected' : ''}>未分類</option>
@@ -222,14 +265,14 @@ export function render(container) {
         </div>
         ${rows.length === 0 ? '<div class="card-note" style="margin:0">明細がありません。</div>' : `
         <table class="ledger">
-          <thead><tr><th>日付</th><th>摘要</th><th class="num">金額</th><th>内訳</th></tr></thead>
+          <thead><tr><th>日付</th><th class="desc">摘要</th><th class="num">金額</th><th>分類</th></tr></thead>
           <tbody>
             ${rows.map((t) => {
               const links = linksByTxn.get(t.id);
               return `
                 <tr data-txn-id="${t.id}">
                   <td>${escapeHtml(t.txn_date)}</td>
-                  <td class="desc">${escapeHtml(t.description)}</td>
+                  <td class="desc"><input type="text" class="desc-edit-input" data-id="${t.id}" value="${escapeHtml(t.description)}"></td>
                   <td class="num ${t.amount >= 0 ? 'txn-amount-in' : 'txn-amount-out'}">${t.amount >= 0 ? yen(t.amount) : `−${yen(Math.abs(t.amount))}`}</td>
                   <td>${links.length > 0 ? linkSummaryHtml(links[0], clients, officers) : `<button class="btn ghost link-btn" data-id="${t.id}">分類する</button>`}</td>
                 </tr>
@@ -242,9 +285,35 @@ export function render(container) {
       </div>
     `;
 
+    slot.querySelector('#period-filter').addEventListener('change', (e) => {
+      periodFilter = e.target.value;
+      renderTransactionList(accountId);
+    });
+    const fromInput = slot.querySelector('#range-from');
+    if (fromInput) fromInput.addEventListener('change', (e) => { rangeFrom = e.target.value; renderTransactionList(accountId); });
+    const toInput = slot.querySelector('#range-to');
+    if (toInput) toInput.addEventListener('change', (e) => { rangeTo = e.target.value; renderTransactionList(accountId); });
+    const searchInput = slot.querySelector('#desc-search');
+    searchInput.addEventListener('input', (e) => {
+      searchText = e.target.value;
+      const cursorPos = e.target.selectionStart;
+      renderTransactionList(accountId);
+      const newInput = container.querySelector('#desc-search');
+      if (newInput) { newInput.focus(); newInput.setSelectionRange(cursorPos, cursorPos); }
+    });
     slot.querySelector('#txn-filter').addEventListener('change', (e) => {
       transactionFilter = e.target.value;
       renderTransactionList(accountId);
+    });
+
+    slot.querySelectorAll('.desc-edit-input').forEach((input) => {
+      input.addEventListener('change', () => {
+        const val = input.value.trim();
+        const original = all.find((t) => t.id === Number(input.dataset.id));
+        if (!val) { input.value = original.description; return; }
+        updateBankTransactionDescription(Number(input.dataset.id), val);
+        renderTransactionList(accountId);
+      });
     });
 
     slot.querySelectorAll('.link-btn').forEach((btn) => {
@@ -262,8 +331,8 @@ export function render(container) {
     });
   }
 
-  function linkSummaryHtml(link, clients, officers) {
-    const kindLabel = {
+  function kindLabel(link, clients, officers) {
+    const label = {
       rent: '家賃', ar: '売掛金', officer_net: '役員報酬（手取り）',
       officer_insurance: '役員報酬（社会保険料）', officer_withholding: '役員報酬（源泉所得税）',
       expense_card: link.category ? `経費（${link.category}の引落）` : '経費（カード引落）',
@@ -271,7 +340,11 @@ export function render(container) {
     const clientName = link.kind === 'ar' && link.client_id ? (clients.find((c) => c.id === link.client_id)?.name || '') : '';
     const officerName = link.kind === 'officer_net' && link.officer_id ? (officers.find((o) => o.id === link.officer_id)?.name || '') : '';
     const subLabel = clientName || officerName;
-    return `<span class="badge good">${escapeHtml(kindLabel)}${subLabel ? `・${escapeHtml(subLabel)}` : ''}</span> <button class="btn ghost unlink-btn" data-link-id="${link.id}">解除</button>`;
+    return `${label}${subLabel ? `・${subLabel}` : ''}`;
+  }
+
+  function linkSummaryHtml(link, clients, officers) {
+    return `<span class="badge good">${escapeHtml(kindLabel(link, clients, officers))}</span> <button class="btn ghost unlink-btn" data-link-id="${link.id}">解除する</button>`;
   }
 
   function openLinkEditor(accountId, txnId, txn, clients, officers) {
@@ -279,13 +352,16 @@ export function render(container) {
     if (!editorRow) return;
     const cell = editorRow.querySelector('td');
     const cards = listPaymentSources({ includeArchived: true }).filter((s) => s.kind === 'card');
-    // 同じ摘要（正規化した振込名義）を持つ、まだ未分類の取引をまとめて候補にする。
-    // 摘要だけで自動確定はせず、必ずここでチェックを外して除外できるようにする
-    // （役員個人の口座が立替精算など別目的の振込も同じ摘要で受け取るケースがあるため）。
+    // 同じ摘要（正規化した振込名義）を持つ取引をまとめて候補にする。分類済みのものも含める
+    // （前後の月で先に分類済みだと未分類だけでは候補から消え、常に後ろの日付しか残らないため。
+    // 含めることで、間違えて分類したものをここからまとめて分類し直せるようにもなる）。
+    // 摘要だけで自動確定はせず、未分類のものだけ既定でチェックし、それ以外は必ず手動で
+    // チェックを入れさせる（役員個人の口座が立替精算など別目的の振込も同じ摘要で受け取るケースがあるため）。
     const matchKey = accountMatchKey(txn.description);
-    const candidates = listBankTransactions(accountId, { onlyUnlinked: true })
+    const candidates = listBankTransactions(accountId)
       .filter((t) => accountMatchKey(t.description) === matchKey)
-      .sort((a, b) => (a.txn_date < b.txn_date ? -1 : a.txn_date > b.txn_date ? 1 : 0));
+      .map((t) => ({ txn: t, links: listBankTransactionLinks(t.id) }))
+      .sort((a, b) => (a.txn.txn_date < b.txn.txn_date ? -1 : a.txn.txn_date > b.txn.txn_date ? 1 : 0));
     cell.innerHTML = `
       <div class="field-row">
         <div class="field-label">分類</div>
@@ -327,19 +403,20 @@ export function render(container) {
         <div class="card-note" style="margin:0">経費タブは合否判定をしません。どのカードの引落か記録するだけの参考情報です。</div>
       </div>
       <div class="field-row">
-        <div class="field-label">同じ摘要の未分類取引（${candidates.length}件）</div>
+        <div class="field-label">同じ摘要の取引（${candidates.length}件）</div>
         <div class="field-value">
           <div class="candidate-list">
-            ${candidates.map((c) => `
+            ${candidates.map(({ txn: c, links: cLinks }) => `
               <label class="candidate-item">
-                <input type="checkbox" class="candidate-checkbox" data-id="${c.id}" checked>
+                <input type="checkbox" class="candidate-checkbox" data-id="${c.id}" ${cLinks.length === 0 ? 'checked' : ''}>
                 <span>${escapeHtml(c.txn_date)}</span>
                 <span class="num">${c.amount >= 0 ? yen(c.amount) : `−${yen(Math.abs(c.amount))}`}円</span>
                 <span class="desc">${escapeHtml(c.description)}</span>
+                ${cLinks.length > 0 ? `<span class="badge muted">現在: ${escapeHtml(kindLabel(cLinks[0], clients, officers))}</span>` : ''}
               </label>
             `).join('')}
           </div>
-          <div class="card-note" style="margin:4px 0 0">違うものはチェックを外してください。</div>
+          <div class="card-note" style="margin:4px 0 0">違うものはチェックを外してください。分類済みのものにチェックを入れると、上で選んだ分類に変更されます。</div>
         </div>
       </div>
       <div class="toolbar">
@@ -374,8 +451,10 @@ export function render(container) {
       const checkedIds = Array.from(cell.querySelectorAll('.candidate-checkbox:checked')).map((cb) => Number(cb.dataset.id));
       if (checkedIds.length === 0) return;
       checkedIds.forEach((id) => {
-        const candidate = candidates.find((c) => c.id === id);
-        const [cy, cm] = candidate.txn_date.split('-').map(Number);
+        const found = candidates.find((c) => c.txn.id === id);
+        // 既に分類済みなら、先に解除してから新しい分類で作り直す（分類し直し）。
+        found.links.forEach((existing) => unlinkBankTransaction(existing.id));
+        const [cy, cm] = found.txn.txn_date.split('-').map(Number);
         const period = derivePeriodForKind(kind, cy, cm);
         linkBankTransaction({ bank_transaction_id: id, kind, client_id: clientId, officer_id: officerId, category, ...period });
       });

@@ -200,7 +200,8 @@ export const ACCOUNT_TITLES = [
 // 分類するための固定リスト。一致するものが無ければ「その他」に寄せ、税理士側での確認を前提とする。
 export const IRREGULAR_CATEGORIES = [
   '源泉所得税（納期の特例）', '住民税特別徴収', '法人税等予定納税',
-  '消費税中間納付', '労働保険年度更新', '立替精算', 'その他',
+  '消費税中間納付', '労働保険年度更新', '支払報酬料（顧問料等）', '支払手数料',
+  '立替精算', 'その他',
 ];
 
 // 摘要から対応ルールのキーを作る。全角/半角ゆれと空白ゆれだけ吸収し、
@@ -1035,6 +1036,13 @@ export function listBankTransactions(bankAccountId, { onlyUnlinked = false } = {
        ORDER BY t.txn_date, t.id`
     : 'SELECT * FROM bank_transactions WHERE bank_account_id=? ORDER BY txn_date, id';
   return all(sql, [bankAccountId]);
+}
+
+// 摘要の手直し（OCR転記と銀行CSVでの表記差など）を手で直せるようにする。
+// fingerprint は元の取込内容のまま変えない — 変えると、同じCSVを再取込したときに
+// 重複としてスキップされず二重に取り込まれてしまう（importBankTransactionsの重複判定を参照）。
+export function updateBankTransactionDescription(id, description) {
+  run('UPDATE bank_transactions SET description=? WHERE id=?', [description, id]);
 }
 
 export function listAllBankTransactions() {
