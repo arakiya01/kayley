@@ -161,15 +161,6 @@ CREATE TABLE IF NOT EXISTS bank_transaction_links (
   confirmed_at TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS bank_payee_aliases (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  match_key TEXT NOT NULL UNIQUE,
-  kind TEXT NOT NULL,
-  client_id INTEGER REFERENCES clients(id),
-  category TEXT,
-  updated_at TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS theme_presets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT,
@@ -1076,25 +1067,6 @@ export function listBankTransactionLinks(bankTransactionId) {
   return all('SELECT * FROM bank_transaction_links WHERE bank_transaction_id=? ORDER BY id', [bankTransactionId]);
 }
 
-/* ---------------- 振込名義の学習（account_rules と同じ設計。accountMatchKey()を再利用） ---------------- */
-
-export function learnBankPayeeAlias(description, { kind, client_id, category }) {
-  if (!kind) return;
-  const matchKey = accountMatchKey(description);
-  if (!matchKey) return;
-  run(
-    `INSERT INTO bank_payee_aliases (match_key, kind, client_id, category, updated_at) VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(match_key) DO UPDATE SET kind=excluded.kind, client_id=excluded.client_id, category=excluded.category, updated_at=excluded.updated_at`,
-    [matchKey, kind, client_id || null, category || null, new Date().toISOString()]
-  );
-}
-
-export function getBankPayeeAlias(description) {
-  const matchKey = accountMatchKey(description);
-  if (!matchKey) return null;
-  return one('SELECT kind, client_id, category FROM bank_payee_aliases WHERE match_key=?', [matchKey]);
-}
-
 /* ---------------- 裏付け判定（家賃・役員報酬・売掛金） ---------------- */
 
 // 源泉所得税は納期の特例のため、1月・7月の納付でだけ判定する。
@@ -1210,24 +1182,6 @@ export function computeArBackingStatus(clientId) {
   );
   if (row.count === 0) return { status: 'none', bankAmount: 0, expectedTotal, count: 0 };
   return { status: row.total === expectedTotal ? 'matched' : 'mismatch', bankAmount: row.total, expectedTotal, count: row.count };
-}
-
-// 未分類の銀行取引に、学習済みの振込名義ルールを適用する。適用件数を返す。
-// 既にリンク済みの取引は対象にしない（applyAccountRulesToMonthと同じ非破壊の原則）。
-// officer_net（役員報酬手取り）だけは対象外: 役員個人の口座は立替精算など別目的の
-// 振込も同じ摘要で受け取ることがあり、摘要だけでは自動判定できないため毎回手動確認とする。
-export function applyBankPayeeAliasesToAccount(bankAccountId) {
-  const unlinked = listBankTransactions(bankAccountId, { onlyUnlinked: true });
-  let applied = 0;
-  unlinked.forEach((t) => {
-    const alias = getBankPayeeAlias(t.description);
-    if (!alias || alias.kind === 'officer_net') return;
-    const [y, m] = t.txn_date.split('-').map(Number);
-    const period = derivePeriodForKind(alias.kind, y, m);
-    linkBankTransaction({ bank_transaction_id: t.id, kind: alias.kind, client_id: alias.client_id, category: alias.category, ...period });
-    applied += 1;
-  });
-  return applied;
 }
 
 export async function importBytes(bytes) {

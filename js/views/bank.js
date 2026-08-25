@@ -2,9 +2,10 @@
 // 銀行データは既存4タブ（売掛金・家賃・役員報酬・経費）のテーブルには一切書き込まない。
 // あくまで裏付け専用の読み取り層であり、ここで確定した内容は bank_transaction_links にのみ保存される。
 import {
-  listBankAccounts, upsertBankAccount, archiveBankAccount, importBankTransactions, applyBankPayeeAliasesToAccount,
-  listBankTransactions, listBankTransactionLinks, linkBankTransaction, unlinkBankTransaction, learnBankPayeeAlias,
+  listBankAccounts, upsertBankAccount, archiveBankAccount, importBankTransactions,
+  listBankTransactions, listBankTransactionLinks, linkBankTransaction, unlinkBankTransaction,
   officerWithholdingPeriodFor, derivePeriodForKind, IRREGULAR_CATEGORIES, listClients, listOfficers, listPaymentSources,
+  accountMatchKey,
 } from '../db.js';
 import { escapeHtml, yen } from '../format.js';
 import { decodeCsvBytes, parseCsvText, mapCsvRow, assignOccurrenceIndex, verifyRunningBalance, splitHeaderAndRows } from '../bankcsv.js';
@@ -184,13 +185,11 @@ export function render(container) {
       : 0;
     const balanceMismatches = verifyRunningBalance(withOccurrence, openingBalance);
     const { imported, skipped } = importBankTransactions(accountId, withOccurrence);
-    const aliasApplied = applyBankPayeeAliasesToAccount(accountId);
 
     const parts = [`${imported}件を取り込みました`];
     if (skipped > 0) parts.push(`${skipped}件は既に取込済みのためスキップ`);
     if (invalidCount > 0) parts.push(`${invalidCount}件は日付・金額を読み取れず取り込めませんでした`);
     if (balanceMismatches.length > 0) parts.push(`${balanceMismatches.length}件で残高の整合が取れませんでした（取込は完了しています）`);
-    if (aliasApplied > 0) parts.push(`${aliasApplied}件は学習済みの振込名義から自動で分類しました`);
     container.querySelector('#import-status').textContent = parts.join('／');
     container.querySelector('#mapping-slot').innerHTML = '';
     renderTransactionList(accountId);
@@ -278,9 +277,15 @@ export function render(container) {
   function openLinkEditor(accountId, txnId, txn, clients, officers) {
     const editorRow = container.querySelector(`tr[data-editor-for="${txnId}"]`);
     if (!editorRow) return;
-    const [ty, tm] = txn.txn_date.split('-').map(Number);
     const cell = editorRow.querySelector('td');
     const cards = listPaymentSources({ includeArchived: true }).filter((s) => s.kind === 'card');
+    // 同じ摘要（正規化した振込名義）を持つ、まだ未分類の取引をまとめて候補にする。
+    // 摘要だけで自動確定はせず、必ずここでチェックを外して除外できるようにする
+    // （役員個人の口座が立替精算など別目的の振込も同じ摘要で受け取るケースがあるため）。
+    const matchKey = accountMatchKey(txn.description);
+    const candidates = listBankTransactions(accountId, { onlyUnlinked: true })
+      .filter((t) => accountMatchKey(t.description) === matchKey)
+      .sort((a, b) => (a.txn_date < b.txn_date ? -1 : a.txn_date > b.txn_date ? 1 : 0));
     cell.innerHTML = `
       <div class="field-row">
         <div class="field-label">分類</div>
@@ -321,6 +326,22 @@ export function render(container) {
         </div>
         <div class="card-note" style="margin:0">経費タブは合否判定をしません。どのカードの引落か記録するだけの参考情報です。</div>
       </div>
+      <div class="field-row">
+        <div class="field-label">同じ摘要の未分類取引（${candidates.length}件）</div>
+        <div class="field-value">
+          <div class="candidate-list">
+            ${candidates.map((c) => `
+              <label class="candidate-item">
+                <input type="checkbox" class="candidate-checkbox" data-id="${c.id}" checked>
+                <span>${escapeHtml(c.txn_date)}</span>
+                <span class="num">${c.amount >= 0 ? yen(c.amount) : `−${yen(Math.abs(c.amount))}`}円</span>
+                <span class="desc">${escapeHtml(c.description)}</span>
+              </label>
+            `).join('')}
+          </div>
+          <div class="card-note" style="margin:4px 0 0">違うものはチェックを外してください。</div>
+        </div>
+      </div>
       <div class="toolbar">
         <span class="spacer"></span>
         <button class="btn ghost" id="link-cancel-${txnId}">キャンセル</button>
@@ -350,17 +371,15 @@ export function render(container) {
       let category = null;
       if (kind === 'irregular') category = cell.querySelector(`#link-category-${txnId}`).value;
       if (kind === 'expense_card') category = cell.querySelector(`#link-card-${txnId}`)?.value || null;
-      const period = derivePeriodForKind(kind, ty, tm);
-      linkBankTransaction({ bank_transaction_id: txnId, kind, client_id: clientId, officer_id: officerId, category, ...period });
-      // officer_net（役員報酬手取り）は学習しない: 役員個人の口座は立替精算など
-      // 別目的の振込も同じ摘要で受け取ることがあり、自動分類の元にすると誤爆するため。
-      if (kind !== 'officer_net') learnBankPayeeAlias(txn.description, { kind, client_id: clientId, category });
-      // 同じ摘要の他の未分類取引にも今学習したルールをその場で適用する。
-      // CSV再取込を待たずに「一回分類したら以後も自動で」を成立させるため。
-      const aliasApplied = applyBankPayeeAliasesToAccount(accountId);
-      if (aliasApplied > 0) {
-        container.querySelector('#import-status').textContent = `同じ摘要の取引を他に${aliasApplied}件、自動で分類しました`;
-      }
+      const checkedIds = Array.from(cell.querySelectorAll('.candidate-checkbox:checked')).map((cb) => Number(cb.dataset.id));
+      if (checkedIds.length === 0) return;
+      checkedIds.forEach((id) => {
+        const candidate = candidates.find((c) => c.id === id);
+        const [cy, cm] = candidate.txn_date.split('-').map(Number);
+        const period = derivePeriodForKind(kind, cy, cm);
+        linkBankTransaction({ bank_transaction_id: id, kind, client_id: clientId, officer_id: officerId, category, ...period });
+      });
+      container.querySelector('#import-status').textContent = `${checkedIds.length}件を分類しました`;
       renderTransactionList(accountId);
     });
   }
