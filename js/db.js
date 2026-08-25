@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS officers (
 
 CREATE TABLE IF NOT EXISTS officer_pay_entries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  officer_id INTEGER,
   year INTEGER NOT NULL,
   month INTEGER NOT NULL,
   gross_pay INTEGER NOT NULL DEFAULT 0,
@@ -71,8 +72,9 @@ CREATE TABLE IF NOT EXISTS officer_pay_entries (
   use_auto_deduction INTEGER NOT NULL DEFAULT 1,
   manual_rent_deduction INTEGER NOT NULL DEFAULT 0,
   manual_utility_deduction INTEGER NOT NULL DEFAULT 0,
+  employer_insurance_total INTEGER,
   note TEXT,
-  UNIQUE(year, month)
+  UNIQUE(officer_id, year, month)
 );
 
 CREATE TABLE IF NOT EXISTS month_status (
@@ -255,6 +257,45 @@ function migrateColumns() {
   ensureColumn('bank_transaction_links', 'officer_id', 'INTEGER REFERENCES officers(id)');
 }
 
+// 旧スキーマの officer_pay_entries は UNIQUE(year, month) 制約を持っており、
+// これが残っていると officer_id の値に関わらず「同じ年月の行は1件だけ」という
+// 制約が効いてしまい、複数役員分の行を同じ月に insert できない。
+// ALTER TABLE では既存のUNIQUE制約を外せないため、テーブルを作り直して移す。
+// 既に新しい制約（UNIQUE(officer_id, year, month)）になっていれば何もしない
+// （sqlite_master の定義文を見て判定するので、何度呼んでも安全）。
+function migrateOfficerPayEntriesConstraint() {
+  const row = one("SELECT sql FROM sqlite_master WHERE type='table' AND name='officer_pay_entries'");
+  if (!row || !row.sql || !row.sql.includes('UNIQUE(year, month)')) return;
+  run('ALTER TABLE officer_pay_entries RENAME TO officer_pay_entries_old');
+  run(`CREATE TABLE officer_pay_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    officer_id INTEGER,
+    year INTEGER NOT NULL,
+    month INTEGER NOT NULL,
+    gross_pay INTEGER NOT NULL DEFAULT 0,
+    health_insurance INTEGER NOT NULL DEFAULT 0,
+    nursing_care_insurance INTEGER NOT NULL DEFAULT 0,
+    pension INTEGER NOT NULL DEFAULT 0,
+    child_support_levy INTEGER NOT NULL DEFAULT 0,
+    withholding_tax INTEGER NOT NULL DEFAULT 0,
+    use_auto_deduction INTEGER NOT NULL DEFAULT 1,
+    manual_rent_deduction INTEGER NOT NULL DEFAULT 0,
+    manual_utility_deduction INTEGER NOT NULL DEFAULT 0,
+    employer_insurance_total INTEGER,
+    note TEXT,
+    UNIQUE(officer_id, year, month)
+  )`);
+  run(`INSERT INTO officer_pay_entries
+         (id, officer_id, year, month, gross_pay, health_insurance, nursing_care_insurance, pension,
+          child_support_levy, withholding_tax, use_auto_deduction, manual_rent_deduction,
+          manual_utility_deduction, employer_insurance_total, note)
+       SELECT id, officer_id, year, month, gross_pay, health_insurance, nursing_care_insurance, pension,
+              child_support_levy, withholding_tax, use_auto_deduction, manual_rent_deduction,
+              manual_utility_deduction, employer_insurance_total, note
+       FROM officer_pay_entries_old`);
+  run('DROP TABLE officer_pay_entries_old');
+}
+
 // 既存の officer_pay_entries（officer_id が無かった旧データ）を「代表者」役員に紐づけ、
 // employer_insurance_total（会社全体の値）を rent_utility_entries へ複製する。
 // 一度移行が終われば legacyCount は常に0になるので、毎回呼んでも安全（ensureColumnと同じ設計）。
@@ -297,6 +338,7 @@ export async function openDatabase() {
   }
   db.run(SCHEMA);
   migrateColumns();
+  migrateOfficerPayEntriesConstraint();
   migrateOfficers();
   for (const [k, v] of Object.entries(DEFAULT_META)) {
     db.run('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)', [k, v]);
@@ -746,8 +788,8 @@ export function upsertRentUtilityEntry(e) {
   run(
     `INSERT INTO rent_utility_entries
        (year, month, rent_total, rent_personal_fixed, water_total, water_personal_pct,
-        gas_total, gas_personal_pct, electricity_total, electricity_personal_pct, note)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        gas_total, gas_personal_pct, electricity_total, electricity_personal_pct, employer_insurance_total, note)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(year, month) DO UPDATE SET
        rent_total=excluded.rent_total,
        rent_personal_fixed=excluded.rent_personal_fixed,
@@ -757,12 +799,13 @@ export function upsertRentUtilityEntry(e) {
        gas_personal_pct=excluded.gas_personal_pct,
        electricity_total=excluded.electricity_total,
        electricity_personal_pct=excluded.electricity_personal_pct,
+       employer_insurance_total=excluded.employer_insurance_total,
        note=excluded.note`,
     [e.year, e.month, e.rent_total || 0, e.rent_personal_fixed || 0,
      e.water_total || 0, e.water_personal_pct ?? 40,
      e.gas_total || 0, e.gas_personal_pct ?? 40,
      e.electricity_total || 0, e.electricity_personal_pct ?? 40,
-     e.note || null]
+     e.employer_insurance_total || 0, e.note || null]
   );
 }
 
@@ -776,46 +819,56 @@ export function computeUtilityPersonalTotal(e) {
 
 /* ---------------- officer pay ---------------- */
 
-export function getOfficerPayEntry(year, month) {
-  return one('SELECT * FROM officer_pay_entries WHERE year=? AND month=?', [year, month]);
+export function getOfficerPayEntry(officerId, year, month) {
+  return one('SELECT * FROM officer_pay_entries WHERE officer_id=? AND year=? AND month=?', [officerId, year, month]);
+}
+
+// 指定月に存在する全役員分のエントリ（ダッシュボード・月次レポートの合計表示、
+// 源泉所得税の全役員合算に使う）。
+export function listOfficerPayEntries(year, month) {
+  return all('SELECT * FROM officer_pay_entries WHERE year=? AND month=?', [year, month]);
 }
 
 // 指定月より前で、直近のデータがある月のエントリを探す（最大24ヶ月遡る）。
 // 見つからなければ null。戻り値は { entry, year, month }。
-export function findPreviousOfficerPayEntry(year, month) {
+export function findPreviousOfficerPayEntry(officerId, year, month) {
   let target = { year, month };
   for (let i = 0; i < 24; i++) {
     target = prevMonth(target.year, target.month);
-    const entry = getOfficerPayEntry(target.year, target.month);
+    const entry = getOfficerPayEntry(officerId, target.year, target.month);
     if (entry) return { entry, year: target.year, month: target.month };
   }
   return null;
 }
 
 export function upsertOfficerPayEntry(e) {
+  const existing = getOfficerPayEntry(e.officer_id, e.year, e.month);
+  if (existing) {
+    run(
+      `UPDATE officer_pay_entries SET
+         gross_pay=?, health_insurance=?, nursing_care_insurance=?, pension=?,
+         child_support_levy=?, withholding_tax=?, use_auto_deduction=?,
+         manual_rent_deduction=?, manual_utility_deduction=?, note=?
+       WHERE id=?`,
+      [e.gross_pay || 0, e.health_insurance || 0, e.nursing_care_insurance || 0,
+       e.pension || 0, e.child_support_levy || 0, e.withholding_tax || 0,
+       e.use_auto_deduction ? 1 : 0, e.manual_rent_deduction || 0, e.manual_utility_deduction || 0,
+       e.note || null, existing.id]
+    );
+    return existing.id;
+  }
   run(
     `INSERT INTO officer_pay_entries
-       (year, month, gross_pay, health_insurance, nursing_care_insurance, pension,
+       (officer_id, year, month, gross_pay, health_insurance, nursing_care_insurance, pension,
         child_support_levy, withholding_tax, use_auto_deduction, manual_rent_deduction,
-        manual_utility_deduction, employer_insurance_total, note)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(year, month) DO UPDATE SET
-       gross_pay=excluded.gross_pay,
-       health_insurance=excluded.health_insurance,
-       nursing_care_insurance=excluded.nursing_care_insurance,
-       pension=excluded.pension,
-       child_support_levy=excluded.child_support_levy,
-       withholding_tax=excluded.withholding_tax,
-       use_auto_deduction=excluded.use_auto_deduction,
-       manual_rent_deduction=excluded.manual_rent_deduction,
-       manual_utility_deduction=excluded.manual_utility_deduction,
-       employer_insurance_total=excluded.employer_insurance_total,
-       note=excluded.note`,
-    [e.year, e.month, e.gross_pay || 0, e.health_insurance || 0, e.nursing_care_insurance || 0,
+        manual_utility_deduction, note)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [e.officer_id, e.year, e.month, e.gross_pay || 0, e.health_insurance || 0, e.nursing_care_insurance || 0,
      e.pension || 0, e.child_support_levy || 0, e.withholding_tax || 0,
      e.use_auto_deduction ? 1 : 0, e.manual_rent_deduction || 0, e.manual_utility_deduction || 0,
-     e.employer_insurance_total || 0, e.note || null]
+     e.note || null]
   );
+  return one('SELECT last_insert_rowid() AS id').id;
 }
 
 // 家賃・光熱費の個人負担は「前月分」が当月の役員報酬から控除される（実績確定が翌月になるため）
@@ -823,8 +876,12 @@ export function prevMonth(year, month) {
   return month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
 }
 
-export function resolveOfficerDeductions(year, month) {
-  const entry = getOfficerPayEntry(year, month);
+export function resolveOfficerDeductions(officerId, year, month) {
+  const officer = getOfficer(officerId);
+  if (!officer || !officer.home_office_deduction) {
+    return { rent_deduction: 0, utility_deduction: 0, auto_rent: 0, auto_utility: 0, source_year: null, source_month: null, has_source: false };
+  }
+  const entry = getOfficerPayEntry(officerId, year, month);
   const prev = prevMonth(year, month);
   const prevRent = getRentUtilityEntry(prev.year, prev.month);
   const autoRent = prevRent ? prevRent.rent_personal_fixed : 0;
@@ -1173,6 +1230,7 @@ export async function importBytes(bytes) {
   db = new SQL.Database(bytes);
   db.run(SCHEMA);
   migrateColumns();
+  migrateOfficerPayEntriesConstraint();
   migrateOfficers();
   for (const [k, v] of Object.entries(DEFAULT_META)) {
     db.run('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)', [k, v]);
