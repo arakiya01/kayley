@@ -8,3 +8,6 @@ dist/
 
 # graft's LLM provider settings, including the API key — never commit this.
 /.env
+
+# personal Claude Code overrides (e.g. statusline preference) — not shared.
+/.claude/settings.local.json
