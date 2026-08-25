@@ -2,6 +2,7 @@ import {
   listClientsForMonths, computeArLedger, unpaidStreak, getRentUtilityEntry, computeUtilityPersonalTotal,
   listOfficerPayEntries, resolveOfficerDeductions, getMeta, getMonthStatus, getFoundingDate,
   listAttachments, listArEntriesForMonth, listExpenseSourceSummaries, getSectionCompletion,
+  computeMonthlyBankCompletion,
 } from '../db.js';
 import {
   yen, yenSigned, monthLabel, escapeHtml, addMonths, todayYearMonth,
@@ -93,12 +94,14 @@ export function render(container, ctx) {
   const expenseRows = listExpenseSourceSummaries([{ year, month }]);
   const expenseTxnCount = expenseRows.reduce((sum, row) => sum + row.transaction_count, 0);
   const expenseReceiptCount = monthAttachments.filter((a) => a.category !== 'invoice' && a.category !== 'statement').length;
+  const bankCompletion = computeMonthlyBankCompletion(year, month);
   const sections = [
     { name: '売掛金', tab: 'ar', done: completion.ar, value: `${arEntries.length}件 / ${yen(thisMonth.sales)}円` },
     { name: '家賃・光熱費', tab: 'rent', done: completion.rent, value: `個人負担 ${personalBurden == null ? '—' : `${yen(personalBurden)}円`}` },
     { name: '役員報酬', tab: 'officer', done: completion.officer, value: `差引 ${netPay == null ? '—' : `${yen(netPay)}円`}` },
     { name: '経費', tab: 'expenses', done: completion.expenses, value: `明細${expenseTxnCount}件 ・ 領収書${expenseReceiptCount}件` },
     { name: '月次レポート', tab: 'report', done: completion.report, value: status && status.report_exported_at ? '出力済み' : '未出力', ctaLabel: '月次レポートを開く' },
+    { name: '銀行', tab: 'bank', done: completion.bank, value: `${bankCompletion.linked}/${bankCompletion.total}件 分類済み` },
   ];
   const incomplete = sections.filter((section) => !section.done);
   const nextSection = incomplete[0];

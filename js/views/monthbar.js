@@ -46,8 +46,9 @@ export function renderMonthBar(container, { year, month, onChange }) {
           else if (isFuture) { cls = 'future'; title = `${monthLabel(m.year, m.month)}：未来`; }
           else {
             const completion = getSectionCompletion(m.year, m.month);
-            const doneCount = Object.values(completion).filter(Boolean).length;
-            cls = doneCount === 0 ? 'critical' : doneCount === 5 ? 'good' : 'warning';
+            const sectionValues = Object.values(completion);
+            const doneCount = sectionValues.filter(Boolean).length;
+            cls = doneCount === 0 ? 'critical' : doneCount === sectionValues.length ? 'good' : 'warning';
             title = `${monthLabel(m.year, m.month)}：${doneCount}件完了`;
           }
           return `

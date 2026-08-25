@@ -125,6 +125,7 @@ export function render(container, ctx) {
         <h2 style="font-size:22px">${escapeHtml(companyName)}</h2>
         <div class="card-note">対象月: ${monthLabel(year, month)}</div>
         <div class="card-note">作成日: ${new Date().toLocaleDateString('ja-JP')}</div>
+        <div class="card-note no-print">完了印は、この月のレポートを一度でも出力すると付きます。</div>
       </div>
       ${allSectionsDone ? `<div class="stamp stamped" style="opacity:1">確定</div>` : ''}
     </div>

@@ -21,7 +21,7 @@ const TABS = [
   { key: 'officer', label: '役員報酬', mod: officerpay, needsMonth: true },
   { key: 'expenses', label: '経費', mod: expenses, needsMonth: true },
   { key: 'report', label: '月次レポート', mod: report, needsMonth: true },
-  { key: 'bank', label: '銀行', mod: bank, needsMonth: false },
+  { key: 'bank', label: '銀行', mod: bank, needsMonth: true },
   { key: 'settings', label: '設定', mod: settings, needsMonth: false },
 ];
 
@@ -69,6 +69,7 @@ function renderProgressSpine() {
     { key: 'officer', label: '役員報酬', done: completion.officer },
     { key: 'expenses', label: '経費', done: completion.expenses },
     { key: 'report', label: '月次レポート', done: completion.report },
+    { key: 'bank', label: '銀行', done: completion.bank },
   ];
   const remaining = steps.filter((step) => !step.done).length;
   document.getElementById('spine-top-slot').innerHTML = `
@@ -78,12 +79,19 @@ function renderProgressSpine() {
         ${companyName ? `<small>${escapeHtml(companyName)}</small>` : '<small><a href="#/settings">会社名を設定する</a></small>'}
       </div>
       <span class="spine-divider"></span>
-      <a class="utility-link ${state.tab === 'bank' ? 'active' : ''}" href="#/bank">銀行</a>
       <a class="utility-link ${state.tab === 'settings' ? 'active' : ''}" href="#/settings">設定</a>
     </div>
   `;
+  const stepHints = {
+    ar: '完了印は、この月の売上・入金が1件でも入力されると付きます',
+    rent: '完了印は、この月の家賃・水道光熱費が入力されると付きます',
+    officer: '完了印は、在籍中の役員全員分の給与明細がこの月に入力されると付きます',
+    expenses: '完了印は、この月の経費データが1件以上あり、すべての明細に勘定科目が選ばれると付きます',
+    report: '完了印は、この月のレポートを一度でも出力すると付きます',
+    bank: '完了印は、この月の明細が1件以上あり、すべて分類済みになると付きます',
+  };
   document.getElementById('workflow-tabs-slot').innerHTML = `
-    ${steps.map((step) => `<a href="#/${step.key}" class="workflow-step ${state.tab === step.key ? 'active' : ''}"><span class="completion-seal ${step.done ? 'done' : ''}"></span>${step.label}</a>`).join('')}
+    ${steps.map((step) => `<a href="#/${step.key}" class="workflow-step ${state.tab === step.key ? 'active' : ''}" title="${stepHints[step.key]}"><span class="completion-seal ${step.done ? 'done' : ''}"></span>${step.label}</a>`).join('')}
     ${remaining > 0 ? `<span class="workflow-hint">あと${remaining}つで締められます</span>` : ''}
   `;
   renderNotices();
@@ -97,7 +105,7 @@ function renderNotices() {
     const candidate = addMonths(today.year, today.month, offset);
     if (!isMonthAllowed(candidate.year, candidate.month)) continue;
     const completion = getSectionCompletion(candidate.year, candidate.month);
-    if (![completion.ar, completion.rent, completion.officer, completion.expenses, completion.report].every(Boolean)) {
+    if (![completion.ar, completion.rent, completion.officer, completion.expenses, completion.report, completion.bank].every(Boolean)) {
       unclosedMonth = candidate;
       break;
     }

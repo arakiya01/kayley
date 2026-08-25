@@ -48,7 +48,7 @@ export function render(container, ctx) {
           <div class="toolbar"><button class="btn ghost bulk-toggle-btn">📋 一括入力（年度）</button></div>
         </div>
         <div id="carry-notice-slot"></div>
-        <div class="card-note">全体の家賃実額と、個人負担分（固定額）を入力します。</div>
+        <div class="card-note">全体の家賃実額と、個人負担分（固定額）を入力します。完了印は、この月の家賃・水道光熱費が入力されると付きます。</div>
         <div class="field-row">
           <div class="field-label">家賃（全体・実額）</div>
           <div class="field-value">

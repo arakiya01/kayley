@@ -913,7 +913,9 @@ export function getSectionCompletion(year, month) {
   const expensesDone = hasExpenseData && !hasUncategorized;
   const status = getMonthStatus(year, month);
   const reportDone = !!(status && status.report_exported_at);
-  return { ar: arDone, rent: rentDone, officer: officerDone, expenses: expensesDone, report: reportDone };
+  const bankCompletion = computeMonthlyBankCompletion(year, month);
+  const bankDone = bankCompletion.total > 0 && bankCompletion.linked === bankCompletion.total;
+  return { ar: arDone, rent: rentDone, officer: officerDone, expenses: expensesDone, report: reportDone, bank: bankDone };
 }
 
 export function markReportExported(year, month) {
@@ -1041,6 +1043,20 @@ export function listAllBankTransactions() {
      JOIN bank_accounts a ON a.id = t.bank_account_id
      ORDER BY t.txn_date DESC, t.id DESC`
   );
+}
+
+// 選択中の月の明細が1件以上あり、全部分類済みかどうか（銀行タブの完了条件）。
+// 明細が1件も無い月は「完了」ではなく「対象外」として扱う（total===0）。
+export function computeMonthlyBankCompletion(year, month) {
+  const ym = `${year}-${String(month).padStart(2, '0')}`;
+  const row = one(
+    `SELECT COUNT(*) AS total,
+            SUM(CASE WHEN EXISTS (SELECT 1 FROM bank_transaction_links l WHERE l.bank_transaction_id = t.id) THEN 1 ELSE 0 END) AS linked
+     FROM bank_transactions t
+     WHERE substr(t.txn_date, 1, 7) = ?`,
+    [ym]
+  );
+  return { total: row.total, linked: row.linked || 0 };
 }
 
 /* ---------------- 銀行取引のリンク（裏付け先の記録） ---------------- */
