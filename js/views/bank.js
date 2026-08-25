@@ -17,8 +17,20 @@ let periodFilter = 'month'; // 'month' | 'fy' | 'range' | 'all'
 let rangeFrom = '';
 let rangeTo = '';
 let searchText = '';
+let searchExpanded = false;
+let specificCategoryFilter = '';
+let lastCtxKey = null;
 
 export function render(container, ctx) {
+  const ctxKey = `${ctx.year}-${ctx.month}`;
+  if (ctxKey !== lastCtxKey) {
+    periodFilter = 'month';
+    rangeFrom = '';
+    rangeTo = '';
+    searchText = '';
+    searchExpanded = false;
+    lastCtxKey = ctxKey;
+  }
   const accounts = listBankAccounts({ includeArchived: true });
   const fyStartMonth = Number(getMeta('fiscal_year_start_month') || 4);
 
@@ -227,18 +239,39 @@ export function render(container, ctx) {
     const all = listBankTransactions(accountId);
     const linksByTxn = new Map(all.map((t) => [t.id, listBankTransactionLinks(t.id)]));
     const { from, to } = periodRange();
-    const searchKey = searchText ? accountMatchKey(searchText) : '';
-    const rows = all.filter((t) => {
-      const links = linksByTxn.get(t.id);
-      if (transactionFilter === 'unlinked' && links.length !== 0) return false;
-      if (transactionFilter === 'linked' && links.length === 0) return false;
-      if (from && t.txn_date < from) return false;
-      if (to && t.txn_date > to) return false;
-      if (searchKey && !accountMatchKey(t.description).includes(searchKey)) return false;
-      return true;
-    });
     const clients = listClients({ includeArchived: true });
     const officers = listOfficers({ includeArchived: true });
+    const searchKeys = searchText.trim().split(/\s+/).filter(Boolean).map(accountMatchKey).filter(Boolean);
+    const candidates = all.filter((t) => {
+      const links = linksByTxn.get(t.id);
+      if (from && t.txn_date < from) return false;
+      if (to && t.txn_date > to) return false;
+      const amount = Math.abs(t.amount);
+      const category = links.length > 0 ? kindLabel(links[0], clients, officers) : '未分類';
+      const haystack = accountMatchKey([
+        t.description, t.txn_date, String(amount), yen(amount), category,
+      ].join(' '));
+      if (!searchKeys.every((key) => haystack.includes(key))) return false;
+      return true;
+    });
+    const categoryOptions = [...new Set(candidates.flatMap((t) => {
+      const links = linksByTxn.get(t.id);
+      return links.length > 0 ? [kindLabel(links[0], clients, officers)] : [];
+    }))].sort((a, b) => a.localeCompare(b, 'ja'));
+    if (!categoryOptions.includes(specificCategoryFilter)) specificCategoryFilter = '';
+    const rows = candidates.filter((t) => {
+      const links = linksByTxn.get(t.id);
+      if (transactionFilter === 'unlinked') return links.length === 0;
+      if (transactionFilter === 'linked') return links.length !== 0;
+      if (transactionFilter === 'specific') {
+        if (links.length === 0) return false;
+        return !specificCategoryFilter || kindLabel(links[0], clients, officers) === specificCategoryFilter;
+      }
+      return true;
+    });
+    const periodLabel = from || to
+      ? `${from ? from.replaceAll('-', '/') : '指定なし'}〜${to ? to.replaceAll('-', '/') : '指定なし'}`
+      : 'すべての期間';
 
     slot.innerHTML = `
       <div class="card">
@@ -256,12 +289,22 @@ export function render(container, ctx) {
               <span>〜</span>
               <input type="date" id="range-to" value="${rangeTo}">
             ` : ''}
-            <input type="text" id="desc-search" placeholder="摘要を検索" value="${escapeHtml(searchText)}" style="width:140px">
+            <span class="period-range-label">${periodLabel}</span>
+            <button class="btn ghost search-toggle-btn ${searchText ? 'active' : ''}" id="search-toggle-btn" type="button" aria-label="明細を検索" aria-expanded="${searchExpanded}">🔍</button>
+            ${searchExpanded ? `<input type="text" id="desc-search" class="transaction-search-input" placeholder="検索（摘要・金額・日付・分類）" value="${escapeHtml(searchText)}">` : ''}
             <select id="txn-filter">
-              <option value="all" ${transactionFilter === 'all' ? 'selected' : ''}>すべて</option>
+              <option value="all" ${transactionFilter === 'all' ? 'selected' : ''}>全分類</option>
               <option value="unlinked" ${transactionFilter === 'unlinked' ? 'selected' : ''}>未分類</option>
-              <option value="linked" ${transactionFilter === 'linked' ? 'selected' : ''}>裏付け済み</option>
+              <option value="linked" ${transactionFilter === 'linked' ? 'selected' : ''}>分類済み</option>
+              <option value="specific" ${transactionFilter === 'specific' ? 'selected' : ''}>分類を指定</option>
             </select>
+            ${transactionFilter === 'specific' ? `
+              <select id="txn-filter-category">
+                ${categoryOptions.length === 0
+                  ? '<option value="" disabled selected>（分類済みの明細がありません）</option>'
+                  : `<option value="" ${specificCategoryFilter ? '' : 'selected'}>分類を選択</option>${categoryOptions.map((category) => `<option value="${escapeHtml(category)}" ${specificCategoryFilter === category ? 'selected' : ''}>${escapeHtml(category)}</option>`).join('')}`}
+              </select>
+            ` : ''}
           </div>
         </div>
         ${rows.length === 0 ? '<div class="card-note" style="margin:0">明細がありません。</div>' : `
@@ -294,16 +337,30 @@ export function render(container, ctx) {
     if (fromInput) fromInput.addEventListener('change', (e) => { rangeFrom = e.target.value; renderTransactionList(accountId); });
     const toInput = slot.querySelector('#range-to');
     if (toInput) toInput.addEventListener('change', (e) => { rangeTo = e.target.value; renderTransactionList(accountId); });
-    const searchInput = slot.querySelector('#desc-search');
-    searchInput.addEventListener('input', (e) => {
-      searchText = e.target.value;
-      const cursorPos = e.target.selectionStart;
+    slot.querySelector('#search-toggle-btn').addEventListener('click', () => {
+      searchExpanded = !searchExpanded;
       renderTransactionList(accountId);
-      const newInput = container.querySelector('#desc-search');
-      if (newInput) { newInput.focus(); newInput.setSelectionRange(cursorPos, cursorPos); }
     });
+    const searchInput = slot.querySelector('#desc-search');
+    if (searchInput) {
+      searchInput.focus();
+      searchInput.setSelectionRange(searchInput.value.length, searchInput.value.length);
+      searchInput.addEventListener('input', (e) => {
+        searchText = e.target.value;
+        const cursorPos = e.target.selectionStart;
+        renderTransactionList(accountId);
+        const newInput = container.querySelector('#desc-search');
+        if (newInput) { newInput.focus(); newInput.setSelectionRange(cursorPos, cursorPos); }
+      });
+    }
     slot.querySelector('#txn-filter').addEventListener('change', (e) => {
       transactionFilter = e.target.value;
+      if (transactionFilter !== 'specific') specificCategoryFilter = '';
+      renderTransactionList(accountId);
+    });
+    const categoryInput = slot.querySelector('#txn-filter-category');
+    if (categoryInput) categoryInput.addEventListener('change', (e) => {
+      specificCategoryFilter = e.target.value;
       renderTransactionList(accountId);
     });
 

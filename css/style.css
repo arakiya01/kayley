@@ -644,6 +644,30 @@ span.file-chip { cursor: default; }
 }
 .toolbar .spacer { flex: 1; }
 
+.period-range-label {
+  color: var(--ink-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.btn.ghost.search-toggle-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.btn.ghost.search-toggle-btn.active {
+  color: var(--hanko);
+  background: var(--hanko-wash);
+}
+
+.transaction-search-input {
+  width: 230px;
+}
+
 /* ---------- hanko stamp ---------- */
 
 .stamp {
