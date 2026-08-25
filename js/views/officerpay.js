@@ -1,9 +1,9 @@
 import {
   getOfficerPayEntry, findPreviousOfficerPayEntry, upsertOfficerPayEntry, resolveOfficerDeductions,
   computeOfficerNetBackingStatus, computeOfficerInsuranceBackingStatus, computeOfficerWithholdingBackingStatus,
-  officerWithholdingPeriodFor, prevMonth, getMeta, getFoundingDate,
+  officerWithholdingPeriodFor, prevMonth, getMeta, getFoundingDate, listOfficers, upsertOfficer, archiveOfficer,
 } from '../db.js';
-import { yen, monthLabel, monthShort, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading, todayYearMonth } from '../format.js';
+import { yen, monthLabel, monthShort, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading, todayYearMonth, escapeHtml } from '../format.js';
 import { renderFySelector } from './fyselector.js';
 import { enableGridPaste } from './gridpaste.js';
 import { donutChart } from '../charts.js';
@@ -23,18 +23,33 @@ const DEDUCTION_FIELDS = [
 const BULK_FIELDS = [{ key: 'gross_pay', label: '支給額' }, ...DEDUCTION_FIELDS, { key: 'employer_insurance_total', label: '社会保険料（会社負担込み）' }];
 
 let bulkMode = false;
+let selectedOfficerId = null;
 let bulkFyStartYear = null;
 
 export function render(container, ctx) {
   const { year, month } = ctx;
+  const officers = listOfficers({ includeArchived: true });
+  const activeOfficers = officers.filter((o) => !o.archived);
+  if (selectedOfficerId == null || !activeOfficers.some((o) => o.id === selectedOfficerId)) {
+    selectedOfficerId = activeOfficers.length ? activeOfficers[0].id : null;
+  }
   const prev = prevMonth(year, month);
   const deductions = resolveOfficerDeductions(year, month);
   const fyStartMonth = Number(getMeta('fiscal_year_start_month') || 4);
   if (bulkFyStartYear == null) bulkFyStartYear = fiscalYearStartOf(year, month, fyStartMonth);
 
   container.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <h2>役員</h2>
+        <div class="toolbar"><button class="btn ghost" id="add-officer-btn">＋ 役員を追加</button></div>
+      </div>
+      <div id="officer-list-slot"></div>
+    </div>
+    <div id="add-officer-form-slot"></div>
     ${bulkMode ? `<div class="toolbar"><span class="spacer"></span><button class="btn ghost bulk-toggle-btn">月次入力に戻る</button></div>` : ''}
     <div id="bulk-slot"></div>
+    ${activeOfficers.length === 0 ? '' : `
     <div id="single-month-slot" style="${bulkMode ? 'display:none' : ''}">
       <div class="card payslip">
         <div class="payslip-header">
@@ -87,6 +102,7 @@ export function render(container, ctx) {
         <div id="pay-breakdown-chart"></div>
       </div>
     </div>
+    `}
     <div class="card">
       <h2>支給額の変化</h2>
       <div class="card-note" style="margin-bottom:2px">${fiscalPeriodHeading(year, month, fyStartMonth, getFoundingDate())}</div>
@@ -95,10 +111,43 @@ export function render(container, ctx) {
     </div>
   `;
 
+  renderOfficerList();
+  container.querySelector('#add-officer-btn').addEventListener('click', () => {
+    const slot = container.querySelector('#add-officer-form-slot');
+    if (slot.innerHTML) { slot.innerHTML = ''; return; }
+    slot.innerHTML = `
+      <div class="card">
+        <h2>役員を追加</h2>
+        <div class="field-row">
+          <div class="field-label">氏名</div>
+          <div class="field-value"><input type="text" id="new-officer-name" placeholder="例: 荒木道子"></div>
+        </div>
+        <div class="field-row">
+          <div class="field-label">自宅の家賃・水道光熱費を天引きする</div>
+          <div class="field-value"><input type="checkbox" id="new-officer-home-deduction"></div>
+        </div>
+        <div class="toolbar">
+          <span class="spacer"></span>
+          <button class="btn primary" id="save-officer-btn">追加する</button>
+        </div>
+      </div>
+    `;
+    slot.querySelector('#save-officer-btn').addEventListener('click', () => {
+      const name = slot.querySelector('#new-officer-name').value.trim();
+      if (!name) return;
+      const homeDeduction = slot.querySelector('#new-officer-home-deduction').checked;
+      const id = upsertOfficer({ name, home_office_deduction: homeDeduction });
+      slot.innerHTML = '';
+      selectedOfficerId = id;
+      render(container, ctx);
+    });
+  });
   container.querySelectorAll('.bulk-toggle-btn').forEach((btn) => btn.addEventListener('click', () => {
     bulkMode = !bulkMode;
     render(container, ctx);
   }));
+
+  if (activeOfficers.length === 0) return;
 
   if (bulkMode) {
     renderBulkTable();
@@ -301,6 +350,49 @@ export function render(container, ctx) {
         const updated = { ...existingEntry, year: y, month: m, [input.dataset.key]: parseCurrencyInput(input.value) };
         upsertOfficerPayEntry(updated);
         renderChart();
+      });
+    });
+  }
+
+  function renderOfficerList() {
+    const slot = container.querySelector('#officer-list-slot');
+    if (officers.length === 0) {
+      slot.innerHTML = '<div class="card-note" style="margin:0">まだ役員が登録されていません。「＋ 役員を追加」から始めましょう。</div>';
+      return;
+    }
+    slot.innerHTML = `
+      <table class="ledger">
+        <thead><tr><th>氏名</th><th>状態</th><th>自宅の家賃・光熱費を天引き</th><th></th><th></th></tr></thead>
+        <tbody>
+          ${officers.map((o) => `
+            <tr data-officer-id="${o.id}" class="${o.id === selectedOfficerId ? 'selected-row' : ''}">
+              <td>${escapeHtml(o.name)}</td>
+              <td>${o.archived ? '休止中' : '有効'}</td>
+              <td><input type="checkbox" class="officer-home-deduction" data-id="${o.id}" ${o.home_office_deduction ? 'checked' : ''}></td>
+              <td><button class="btn ghost select-officer-btn" data-id="${o.id}">選ぶ</button></td>
+              <td><button class="btn ghost archive-officer-btn" data-id="${o.id}" data-archived="${o.archived}">${o.archived ? '再開する' : '休止する'}</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+    slot.querySelectorAll('.select-officer-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        selectedOfficerId = Number(btn.dataset.id);
+        render(container, ctx);
+      });
+    });
+    slot.querySelectorAll('.archive-officer-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        archiveOfficer(Number(btn.dataset.id), btn.dataset.archived === '1' ? 0 : 1);
+        render(container, ctx);
+      });
+    });
+    slot.querySelectorAll('.officer-home-deduction').forEach((checkbox) => {
+      checkbox.addEventListener('change', () => {
+        const officer = officers.find((o) => o.id === Number(checkbox.dataset.id));
+        upsertOfficer({ ...officer, home_office_deduction: checkbox.checked });
+        render(container, ctx);
       });
     });
   }
