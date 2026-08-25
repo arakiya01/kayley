@@ -728,7 +728,6 @@ span.file-chip { cursor: default; }
 .bank-badge { text-decoration: none; cursor: pointer; }
 .bank-badge-slot { margin-top: 6px; }
 .card-header-title { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.employer-insurance-block { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--hairline); }
 tr.link-editor-row td { padding: 12px 8px; background: var(--card-raised); }
 .candidate-list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
 .candidate-item { display: flex; align-items: baseline; gap: 8px; font-size: 13px; padding: 3px 0; }

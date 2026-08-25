@@ -9,6 +9,7 @@ import {
 } from '../db.js';
 import { escapeHtml, yen, fiscalYearStartOf, fiscalYearMonths } from '../format.js';
 import { decodeCsvBytes, parseCsvText, mapCsvRow, assignOccurrenceIndex, verifyRunningBalance, splitHeaderAndRows } from '../bankcsv.js';
+import { parseCurrencyInput, enableCurrencyInput } from '../currencyinput.js';
 
 let openAccountId = null;
 let transactionFilter = 'all'; // 'all' | 'unlinked' | 'linked'
@@ -402,6 +403,17 @@ export function render(container, ctx) {
         </div>
         <div class="card-note" style="margin:0">経費タブは合否判定をしません。どのカードの引落か記録するだけの参考情報です。</div>
       </div>
+      <div class="field-row" id="link-employer-share-row-${txnId}" style="display:none">
+        <div class="field-label">会社負担分</div>
+        <div class="field-value">
+          <input type="text" inputmode="numeric" class="currency-input" id="link-employer-share-${txnId}" value="0">
+          <span class="field-suffix">円</span>
+        </div>
+        <div class="card-note" style="margin:0">
+          社会保険料は労使折半で、この引落額には役員の給与から天引き済みの分（自動集計）と会社負担分の両方が含まれます。
+          会社が上乗せする分だけをここに入力してください。
+        </div>
+      </div>
       <div class="field-row">
         <div class="field-label">同じ摘要の取引（${candidates.length}件）</div>
         <div class="field-value">
@@ -433,9 +445,11 @@ export function render(container, ctx) {
       cell.querySelector(`#link-officer-row-${txnId}`).style.display = kindSelect.value === 'officer_net' ? '' : 'none';
       cell.querySelector(`#link-category-row-${txnId}`).style.display = kindSelect.value === 'irregular' ? '' : 'none';
       cell.querySelector(`#link-card-row-${txnId}`).style.display = kindSelect.value === 'expense_card' ? '' : 'none';
+      cell.querySelector(`#link-employer-share-row-${txnId}`).style.display = kindSelect.value === 'officer_insurance' ? '' : 'none';
     };
     kindSelect.addEventListener('change', updateVisibility);
     updateVisibility();
+    enableCurrencyInput(cell.querySelector(`#link-employer-share-${txnId}`));
 
     cell.querySelector(`#link-cancel-${txnId}`).addEventListener('click', () => { editorRow.style.display = 'none'; });
 
@@ -448,6 +462,9 @@ export function render(container, ctx) {
       let category = null;
       if (kind === 'irregular') category = cell.querySelector(`#link-category-${txnId}`).value;
       if (kind === 'expense_card') category = cell.querySelector(`#link-card-${txnId}`)?.value || null;
+      const employerInsuranceShare = kind === 'officer_insurance'
+        ? parseCurrencyInput(cell.querySelector(`#link-employer-share-${txnId}`).value)
+        : null;
       const checkedIds = Array.from(cell.querySelectorAll('.candidate-checkbox:checked')).map((cb) => Number(cb.dataset.id));
       if (checkedIds.length === 0) return;
       checkedIds.forEach((id) => {
@@ -456,7 +473,10 @@ export function render(container, ctx) {
         found.links.forEach((existing) => unlinkBankTransaction(existing.id));
         const [cy, cm] = found.txn.txn_date.split('-').map(Number);
         const period = derivePeriodForKind(kind, cy, cm);
-        linkBankTransaction({ bank_transaction_id: id, kind, client_id: clientId, officer_id: officerId, category, ...period });
+        linkBankTransaction({
+          bank_transaction_id: id, kind, client_id: clientId, officer_id: officerId, category,
+          employer_insurance_share: employerInsuranceShare, ...period,
+        });
       });
       container.querySelector('#import-status').textContent = `${checkedIds.length}件を分類しました`;
       renderTransactionList(accountId);

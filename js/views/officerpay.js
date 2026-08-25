@@ -1,8 +1,7 @@
 import {
   getOfficerPayEntry, findPreviousOfficerPayEntry, upsertOfficerPayEntry, resolveOfficerDeductions,
-  computeOfficerNetBackingStatus, computeOfficerInsuranceBackingStatus, computeOfficerWithholdingBackingStatus,
+  computeOfficerNetBackingStatus, computeOfficerWithholdingBackingStatus,
   officerWithholdingPeriodFor, prevMonth, getMeta, getFoundingDate, listOfficers, upsertOfficer, archiveOfficer,
-  getRentUtilityEntry, upsertRentUtilityEntry,
 } from '../db.js';
 import { yen, monthLabel, monthShort, fiscalYearStartOf, fiscalYearMonths, fiscalPeriodHeading, todayYearMonth, escapeHtml } from '../format.js';
 import { renderFySelector } from './fyselector.js';
@@ -95,14 +94,6 @@ export function render(container, ctx) {
             ` : ''}
           </section>
         </div>
-        <div class="employer-insurance-block">
-          <div class="compact-field">
-            <label for="employer_insurance_total">社会保険料（会社負担込み・銀行引落額）</label>
-            <span><input type="text" inputmode="numeric" class="currency-input" id="employer_insurance_total"><small>円</small></span>
-          </div>
-          <div id="officer-insurance-badge-slot" class="bank-badge-slot"></div>
-          <div class="card-note" style="margin:0">手取り計算には使いません。年金事務所への実際の引き落とし額をそのまま入力し、銀行明細との照合にのみ使います。</div>
-        </div>
         <h2>当月の内訳</h2>
         <div id="pay-breakdown-chart"></div>
       </div>
@@ -192,8 +183,6 @@ export function render(container, ctx) {
   }
 
   container.querySelector('#gross_pay').value = state.gross_pay;
-  const rentEntry = getRentUtilityEntry(year, month);
-  container.querySelector('#employer_insurance_total').value = rentEntry ? rentEntry.employer_insurance_total || 0 : 0;
   DEDUCTION_FIELDS.forEach((f) => { container.querySelector(`#${f.key}`).value = state[f.key]; });
   if (selectedOfficer.home_office_deduction) {
     container.querySelector('#use_auto').checked = !!state.use_auto_deduction;
@@ -204,8 +193,6 @@ export function render(container, ctx) {
   container.querySelectorAll('#single-month-slot input.currency-input').forEach(enableCurrencyInput);
 
   function save() {
-    const rentEntry = getRentUtilityEntry(year, month) || { year, month, rent_total: 0, rent_personal_fixed: 0, water_total: 0, water_personal_pct: 40, gas_total: 0, gas_personal_pct: 40, electricity_total: 0, electricity_personal_pct: 40 };
-    upsertRentUtilityEntry({ ...rentEntry, year, month, employer_insurance_total: parseCurrencyInput(container.querySelector('#employer_insurance_total').value) });
     const useAuto = selectedOfficer.home_office_deduction ? container.querySelector('#use_auto').checked : false;
     const entry = {
       officer_id: selectedOfficerId, year, month,
@@ -253,7 +240,6 @@ export function render(container, ctx) {
     });
 
     container.querySelector('#officer-net-badge-slot').innerHTML = bankBadgeHtml(computeOfficerNetBackingStatus(selectedOfficerId, year, month));
-    container.querySelector('#officer-insurance-badge-slot').innerHTML = bankBadgeHtml(computeOfficerInsuranceBackingStatus(year, month));
     const withholdingSlot = container.querySelector('#officer-withholding-badge-slot');
     withholdingSlot.innerHTML = officerWithholdingPeriodFor(year, month)
       ? bankBadgeHtml(computeOfficerWithholdingBackingStatus(year, month))

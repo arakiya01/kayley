@@ -247,6 +247,7 @@ function migrateColumns() {
   ensureColumn('officer_pay_entries', 'officer_id', 'INTEGER');
   ensureColumn('rent_utility_entries', 'employer_insurance_total', 'INTEGER');
   ensureColumn('bank_transaction_links', 'officer_id', 'INTEGER REFERENCES officers(id)');
+  ensureColumn('bank_transaction_links', 'employer_insurance_share', 'INTEGER');
   ensureColumn('officers', 'role', 'TEXT');
 }
 
@@ -1070,14 +1071,14 @@ export function computeMonthlyBankCompletion(year, month) {
 /* ---------------- 銀行取引のリンク（裏付け先の記録） ---------------- */
 
 export function linkBankTransaction({
-  bank_transaction_id, kind, client_id, officer_id, category,
+  bank_transaction_id, kind, client_id, officer_id, category, employer_insurance_share,
   period_start_year, period_start_month, period_end_year, period_end_month, note,
 }) {
   run(
     `INSERT INTO bank_transaction_links
-       (bank_transaction_id, kind, client_id, officer_id, category, period_start_year, period_start_month, period_end_year, period_end_month, note, confirmed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [bank_transaction_id, kind, client_id || null, officer_id || null, category || null,
+       (bank_transaction_id, kind, client_id, officer_id, category, employer_insurance_share, period_start_year, period_start_month, period_end_year, period_end_month, note, confirmed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [bank_transaction_id, kind, client_id || null, officer_id || null, category || null, employer_insurance_share || null,
      period_start_year || null, period_start_month || null, period_end_year || null, period_end_month || null,
      note || null, new Date().toISOString()]
   );
@@ -1166,13 +1167,26 @@ export function computeOfficerNetBackingStatus(officerId, year, month) {
   return { status: bankAmount === expectedTotal ? 'matched' : 'mismatch', bankAmount, expectedTotal, count };
 }
 
+// 社会保険料（健康保険・厚生年金）は労使折半で、銀行から引き落とされるのは
+// 従業員負担分（役員の給与から天引き済み）と会社負担分を合わせた全額。
+// 従業員負担分は源泉所得税と同じく全役員分を自動集計し、会社負担分だけは
+// 銀行タブでこの取引を分類するときに手入力してもらう（bank_transaction_links.employer_insurance_share）。
 export function computeOfficerInsuranceBackingStatus(year, month) {
-  const entry = getRentUtilityEntry(year, month);
-  const expectedTotal = entry ? (entry.employer_insurance_total || 0) : 0;
-  const { total: bankTotal, count } = sumLinkedBankAmount({ kind: 'officer_insurance', year, month });
-  if (count === 0) return { status: 'none', bankAmount: 0, expectedTotal, count: 0 };
-  const bankAmount = Math.abs(bankTotal);
-  return { status: bankAmount === expectedTotal ? 'matched' : 'mismatch', bankAmount, expectedTotal, count };
+  const employeeTotal = listOfficerPayEntries(year, month)
+    .reduce((sum, e) => sum + (e.health_insurance || 0) + (e.nursing_care_insurance || 0) + (e.pension || 0), 0);
+  const links = all(
+    `SELECT l.employer_insurance_share, t.amount
+     FROM bank_transaction_links l JOIN bank_transactions t ON t.id = l.bank_transaction_id
+     WHERE l.kind='officer_insurance' AND l.period_start_year=? AND l.period_start_month=?`,
+    [year, month]
+  );
+  if (links.length === 0) {
+    return { status: employeeTotal === 0 ? 'not_applicable' : 'none', bankAmount: 0, expectedTotal: employeeTotal, count: 0 };
+  }
+  const employerShareTotal = links.reduce((sum, l) => sum + (l.employer_insurance_share || 0), 0);
+  const bankAmount = Math.abs(links.reduce((sum, l) => sum + l.amount, 0));
+  const expectedTotal = employeeTotal + employerShareTotal;
+  return { status: bankAmount === expectedTotal ? 'matched' : 'mismatch', bankAmount, expectedTotal, count: links.length };
 }
 
 export function computeOfficerWithholdingBackingStatus(year, month) {
