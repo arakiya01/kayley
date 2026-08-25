@@ -1,6 +1,6 @@
 import {
   listClientsForMonths, computeArLedger, unpaidStreak, getRentUtilityEntry, computeUtilityPersonalTotal,
-  getOfficerPayEntry, resolveOfficerDeductions, getMeta, getMonthStatus, getFoundingDate,
+  listOfficerPayEntries, resolveOfficerDeductions, getMeta, getMonthStatus, getFoundingDate,
   listAttachments, listArEntriesForMonth, listExpenseSourceSummaries, getSectionCompletion,
 } from '../db.js';
 import {
@@ -29,11 +29,13 @@ function monthSalesAndPayment(clients, year, month) {
 }
 
 function netPayFor(year, month) {
-  const e = getOfficerPayEntry(year, month);
-  if (!e) return null;
-  const d = resolveOfficerDeductions(year, month);
-  const total = DEDUCTION_KEYS.reduce((a, k) => a + (e[k] || 0), 0) + d.rent_deduction + d.utility_deduction;
-  return e.gross_pay - total;
+  const entries = listOfficerPayEntries(year, month);
+  if (entries.length === 0) return null;
+  return entries.reduce((sum, e) => {
+    const d = resolveOfficerDeductions(e.officer_id, year, month);
+    const total = DEDUCTION_KEYS.reduce((a, k) => a + (e[k] || 0), 0) + d.rent_deduction + d.utility_deduction;
+    return sum + (e.gross_pay - total);
+  }, 0);
 }
 
 // 2ヶ月以上、売上計上済みなのに入金が確認できていない得意先を抽出（滞留アラート用）

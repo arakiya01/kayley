@@ -1,6 +1,6 @@
 import {
   listClientsForMonth, listClientsForMonths, computeArLedger, getRentUtilityEntry, computeUtilityPersonalTotal,
-  getOfficerPayEntry, resolveOfficerDeductions, getMeta, getSectionCompletion, prevMonth,
+  listOfficerPayEntries, resolveOfficerDeductions, getMeta, getSectionCompletion, prevMonth,
   listAttachments, removeAttachment, getClient, listExpenseAccountSummaries, listAllStatementTransactions,
   ACCOUNT_TITLES, markReportExported,
 } from '../db.js';
@@ -47,11 +47,19 @@ export function render(container, ctx) {
   const utilityPersonal = rentEntry ? computeUtilityPersonalTotal(rentEntry) : 0;
   const rentPersonal = rentEntry ? rentEntry.rent_personal_fixed : 0;
 
-  const payEntry = getOfficerPayEntry(year, month);
-  const deductions = resolveOfficerDeductions(year, month);
-  const deductionRows = payEntry ? DEDUCTION_FIELDS.map((f) => ({ label: f.label, value: payEntry[f.key] || 0 })) : [];
-  const deductionTotal = (payEntry ? deductionRows.reduce((a, r) => a + r.value, 0) : 0) + deductions.rent_deduction + deductions.utility_deduction;
-  const netPay = payEntry ? payEntry.gross_pay - deductionTotal : 0;
+  const officerEntries = listOfficerPayEntries(year, month);
+  const grossPayTotal = officerEntries.reduce((a, e) => a + (e.gross_pay || 0), 0);
+  const deductionRows = officerEntries.length ? DEDUCTION_FIELDS.map((f) => ({
+    label: f.label,
+    value: officerEntries.reduce((a, e) => a + (e[f.key] || 0), 0),
+  })) : [];
+  const officerDeductionsList = officerEntries.map((e) => resolveOfficerDeductions(e.officer_id, year, month));
+  const deductions = {
+    rent_deduction: officerDeductionsList.reduce((a, d) => a + d.rent_deduction, 0),
+    utility_deduction: officerDeductionsList.reduce((a, d) => a + d.utility_deduction, 0),
+  };
+  const deductionTotal = deductionRows.reduce((a, r) => a + r.value, 0) + deductions.rent_deduction + deductions.utility_deduction;
+  const netPay = grossPayTotal - deductionTotal;
 
   // 税理士向けサマリー: Kayleyに記録されている範囲の主要科目を、今期の月初〜当月分で累計する
   // （税理士から送られてくる「残高試算表・損益計算書」と同じ科目名で突き合わせやすくするため）。
@@ -71,16 +79,14 @@ export function render(container, ctx) {
     });
   });
 
-  const statutoryThisMonth = payEntry
-    ? (payEntry.health_insurance || 0) + (payEntry.nursing_care_insurance || 0)
-      + (payEntry.pension || 0) + (payEntry.child_support_levy || 0)
-    : 0;
+  const statutoryThisMonth = officerEntries.reduce((a, e) =>
+    a + (e.health_insurance || 0) + (e.nursing_care_insurance || 0) + (e.pension || 0) + (e.child_support_levy || 0), 0);
   let officerFy = 0, statutoryFy = 0;
   monthsToDate.forEach((m) => {
-    const e = getOfficerPayEntry(m.year, m.month);
-    if (!e) return;
-    officerFy += e.gross_pay || 0;
-    statutoryFy += (e.health_insurance || 0) + (e.nursing_care_insurance || 0) + (e.pension || 0) + (e.child_support_levy || 0);
+    listOfficerPayEntries(m.year, m.month).forEach((e) => {
+      officerFy += e.gross_pay || 0;
+      statutoryFy += (e.health_insurance || 0) + (e.nursing_care_insurance || 0) + (e.pension || 0) + (e.child_support_levy || 0);
+    });
   });
 
   const expenseSummaries = listExpenseAccountSummaries(monthsToDate);
@@ -133,7 +139,7 @@ export function render(container, ctx) {
         </thead>
         <tbody>
           <tr><td>売上高</td><td class="num">${yen(salesThisMonth)}</td><td class="num">${yen(salesFy)}</td></tr>
-          <tr><td>役員報酬</td><td class="num">${yen(payEntry ? payEntry.gross_pay : 0)}</td><td class="num">${yen(officerFy)}</td></tr>
+          <tr><td>役員報酬</td><td class="num">${yen(grossPayTotal)}</td><td class="num">${yen(officerFy)}</td></tr>
           <tr><td>法定福利費</td><td class="num">${yen(statutoryThisMonth)}</td><td class="num">${yen(statutoryFy)}</td></tr>
           <tr><td>地代家賃</td><td class="num">${yen(rentThisMonth)}</td><td class="num">${yen(rentFy)}</td></tr>
           <tr class="expense-group"><td>経費（カード・現金）</td><td class="num">${yen(expenseThisMonth)}</td><td class="num">${yen(expenseFy)}</td></tr>
@@ -193,7 +199,7 @@ export function render(container, ctx) {
       <div class="card-note">家賃・光熱費控除は ${monthLabel(prev.year, prev.month)} 分の実績を反映しています。</div>
       <table class="ledger">
         <tbody>
-          <tr><td>支給額</td><td class="num">${yen(payEntry ? payEntry.gross_pay : 0)}</td></tr>
+          <tr><td>支給額</td><td class="num">${yen(grossPayTotal)}</td></tr>
           ${deductionRows.map((r) => `<tr><td>${escapeHtml(r.label)}</td><td class="num">${yen(r.value)}</td></tr>`).join('')}
           <tr><td>家賃控除</td><td class="num">${yen(deductions.rent_deduction)}</td></tr>
           <tr><td>水道光熱費控除</td><td class="num">${yen(deductions.utility_deduction)}</td></tr>
