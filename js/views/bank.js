@@ -4,7 +4,7 @@
 import {
   listBankAccounts, upsertBankAccount, archiveBankAccount, importBankTransactions, applyBankPayeeAliasesToAccount,
   listBankTransactions, listBankTransactionLinks, linkBankTransaction, unlinkBankTransaction, learnBankPayeeAlias,
-  officerWithholdingPeriodFor, derivePeriodForKind, IRREGULAR_CATEGORIES, listClients, listPaymentSources,
+  officerWithholdingPeriodFor, derivePeriodForKind, IRREGULAR_CATEGORIES, listClients, listOfficers, listPaymentSources,
 } from '../db.js';
 import { escapeHtml, yen } from '../format.js';
 import { decodeCsvBytes, parseCsvText, mapCsvRow, assignOccurrenceIndex, verifyRunningBalance, splitHeaderAndRows } from '../bankcsv.js';
@@ -207,6 +207,7 @@ export function render(container) {
       return true;
     });
     const clients = listClients({ includeArchived: true });
+    const officers = listOfficers({ includeArchived: true });
 
     slot.innerHTML = `
       <div class="card">
@@ -231,7 +232,7 @@ export function render(container) {
                   <td>${escapeHtml(t.txn_date)}</td>
                   <td class="desc">${escapeHtml(t.description)}</td>
                   <td class="num ${t.amount >= 0 ? 'txn-amount-in' : 'txn-amount-out'}">${t.amount >= 0 ? yen(t.amount) : `−${yen(Math.abs(t.amount))}`}</td>
-                  <td>${links.length > 0 ? linkSummaryHtml(links[0], clients) : `<button class="btn ghost link-btn" data-id="${t.id}">分類する</button>`}</td>
+                  <td>${links.length > 0 ? linkSummaryHtml(links[0], clients, officers) : `<button class="btn ghost link-btn" data-id="${t.id}">分類する</button>`}</td>
                 </tr>
                 <tr class="link-editor-row" data-editor-for="${t.id}" style="display:none"><td colspan="4"></td></tr>
               `;
@@ -250,7 +251,7 @@ export function render(container) {
     slot.querySelectorAll('.link-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         const txnId = Number(btn.dataset.id);
-        openLinkEditor(accountId, txnId, rows.find((r) => r.id === txnId), clients);
+        openLinkEditor(accountId, txnId, rows.find((r) => r.id === txnId), clients, officers);
       });
     });
 
@@ -262,17 +263,19 @@ export function render(container) {
     });
   }
 
-  function linkSummaryHtml(link, clients) {
+  function linkSummaryHtml(link, clients, officers) {
     const kindLabel = {
       rent: '家賃', ar: '売掛金', officer_net: '役員報酬（手取り）',
       officer_insurance: '役員報酬（社会保険料）', officer_withholding: '役員報酬（源泉所得税）',
       expense_card: link.category ? `経費（${link.category}の引落）` : '経費（カード引落）',
     }[link.kind] || (link.category || '不定型');
     const clientName = link.kind === 'ar' && link.client_id ? (clients.find((c) => c.id === link.client_id)?.name || '') : '';
-    return `<span class="badge good">${escapeHtml(kindLabel)}${clientName ? `・${escapeHtml(clientName)}` : ''}</span> <button class="btn ghost unlink-btn" data-link-id="${link.id}">解除</button>`;
+    const officerName = link.kind === 'officer_net' && link.officer_id ? (officers.find((o) => o.id === link.officer_id)?.name || '') : '';
+    const subLabel = clientName || officerName;
+    return `<span class="badge good">${escapeHtml(kindLabel)}${subLabel ? `・${escapeHtml(subLabel)}` : ''}</span> <button class="btn ghost unlink-btn" data-link-id="${link.id}">解除</button>`;
   }
 
-  function openLinkEditor(accountId, txnId, txn, clients) {
+  function openLinkEditor(accountId, txnId, txn, clients, officers) {
     const editorRow = container.querySelector(`tr[data-editor-for="${txnId}"]`);
     if (!editorRow) return;
     const [ty, tm] = txn.txn_date.split('-').map(Number);
@@ -299,6 +302,12 @@ export function render(container) {
           <select id="link-client-${txnId}">${clients.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}</select>
         </div>
       </div>
+      <div class="field-row" id="link-officer-row-${txnId}" style="display:none">
+        <div class="field-label">役員</div>
+        <div class="field-value">
+          <select id="link-officer-${txnId}">${officers.map((o) => `<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select>
+        </div>
+      </div>
       <div class="field-row" id="link-category-row-${txnId}" style="display:none">
         <div class="field-label">カテゴリ</div>
         <div class="field-value">
@@ -323,6 +332,7 @@ export function render(container) {
     const kindSelect = cell.querySelector(`#link-kind-${txnId}`);
     const updateVisibility = () => {
       cell.querySelector(`#link-client-row-${txnId}`).style.display = kindSelect.value === 'ar' ? '' : 'none';
+      cell.querySelector(`#link-officer-row-${txnId}`).style.display = kindSelect.value === 'officer_net' ? '' : 'none';
       cell.querySelector(`#link-category-row-${txnId}`).style.display = kindSelect.value === 'irregular' ? '' : 'none';
       cell.querySelector(`#link-card-row-${txnId}`).style.display = kindSelect.value === 'expense_card' ? '' : 'none';
     };
@@ -334,13 +344,14 @@ export function render(container) {
     cell.querySelector(`#link-confirm-${txnId}`).addEventListener('click', () => {
       const kind = kindSelect.value;
       const clientId = kind === 'ar' ? Number(cell.querySelector(`#link-client-${txnId}`).value) : null;
+      const officerId = kind === 'officer_net' ? Number(cell.querySelector(`#link-officer-${txnId}`).value) : null;
       // category列は irregular のカテゴリ名と expense_card のカード名の両方の置き場として使う
       // （新しい列を増やさず、既存の bank_transaction_links.category をそのまま再利用する）。
       let category = null;
       if (kind === 'irregular') category = cell.querySelector(`#link-category-${txnId}`).value;
       if (kind === 'expense_card') category = cell.querySelector(`#link-card-${txnId}`)?.value || null;
       const period = derivePeriodForKind(kind, ty, tm);
-      linkBankTransaction({ bank_transaction_id: txnId, kind, client_id: clientId, category, ...period });
+      linkBankTransaction({ bank_transaction_id: txnId, kind, client_id: clientId, officer_id: officerId, category, ...period });
       // officer_net（役員報酬手取り）は学習しない: 役員個人の口座は立替精算など
       // 別目的の振込も同じ摘要で受け取ることがあり、自動分類の元にすると誤爆するため。
       if (kind !== 'officer_net') learnBankPayeeAlias(txn.description, { kind, client_id: clientId, category });

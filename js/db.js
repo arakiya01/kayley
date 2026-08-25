@@ -907,7 +907,11 @@ export function getMonthStatus(year, month) {
 export function getSectionCompletion(year, month) {
   const arDone = listArEntriesForMonth(year, month).length > 0;
   const rentDone = !!getRentUtilityEntry(year, month);
-  const officerDone = !!getOfficerPayEntry(year, month);
+  const activeOfficerIds = listOfficers().map((o) => o.id);
+  const officerEntries = listOfficerPayEntries(year, month);
+  // 全役員分の入力が揃って初めて「完了」とする（1人分だけ入れて他の役員を
+  // 忘れたまま完了印が付いてしまわないように）。役員が1人も登録されていなければ未完了。
+  const officerDone = activeOfficerIds.length > 0 && activeOfficerIds.every((id) => officerEntries.some((e) => e.officer_id === id));
   const attachments = listAttachments(year, month);
   const expenseRows = listExpenseSourceSummaries([{ year, month }]);
   const monthTxns = listAllStatementTransactions(year, month);
