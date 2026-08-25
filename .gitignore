@@ -2,3 +2,9 @@
 *.sqlite
 node_modules/
 dist/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+
+# graft's LLM provider settings, including the API key — never commit this.
+/.env
