@@ -40,7 +40,9 @@
 2. **ブラウザ検証**: プロジェクトルートで`python3 -m http.server 8900 --directory /home/lima.guest/projects/kayley`を起動し、Playwright（`chromium.launch()`）で開いて、`page.evaluate()`内で`await import('/js/db.js')`してデータを直接投入し、DOM・コンソールエラーを確認する。検証スクリプトは作業用ディレクトリに置き、リポジトリにはコミットしない
 3. `migrateOfficers()`の「既存データがある場合の移行」分岐（`legacyCount > 0`）は、既存の`ensureColumn`/`migrateColumns`と同じ理由で専用の単体テストを書かない — この関数群はDB内部の生SQLで直接状態を作らないと再現できず、公開APIの外側の話になるため。新規インストール（`legacyCount === 0`で即returnする分岐）は各タスクのPlaywright検証で毎回自然にカバーされる
 4. 各タスクの最後に`git add` → `git commit`する。コミットメッセージは日本語、既存コミットと同じ粒度（1〜2行の要約＋箇条書きの本文）
-5. **既知の過渡的な状態**: Task 2〜6の間は、`officerpay.js`/`dashboard.js`/`report.js`がまだ新しい`getOfficerPayEntry(officerId, year, month)`シグネチャに追随していない（Task 5〜7で対応する）。この間、デフォルトタブ（ダッシュボード）を開くと`getOfficerPayEntry(year, month)`が2引数のまま3引数関数を呼ぶことになり、コンソールに`Wrong API use : tried to bind a value of an unknown type (undefined).`という警告が出る。これはTask 2で確認済みの、既知・想定内の過渡的な症状であり、Task 2〜4の検証スクリプトで`errors`をチェックする際はこの特定のメッセージだけは許容する（他の新しいエラーが混ざっていないかだけ確認する）。Task 7完了後の全体回帰検証（Task 8）では、この警告も含めて`errors`が`[]`になっていることを確認する
+5. **既知の過渡的な状態**: Task 2〜6の間は、`officerpay.js`/`dashboard.js`/`report.js`がまだ新しい`getOfficerPayEntry(officerId, year, month)`シグネチャに追随していない（Task 5〜7で対応する）。これらのファイル自身のタブ（役員報酬・ダッシュボード・月次レポート）を開くと、コンソールに`Wrong API use : tried to bind a value of an unknown type (undefined).`という警告が出る。これは既知・想定内の過渡的な症状であり、Task 2〜6の検証スクリプトで`errors`をチェックする際はこの特定のメッセージだけは許容する（他の新しいエラーが混ざっていないかだけ確認する）。Task 7完了後の全体回帰検証（Task 8）では、この警告も含めて`errors`が`[]`になっていることを確認する。
+
+   **Task 4実行中に追加で発覚した重要な点**: `db.js`内の`getSectionCompletion()`（`app.js`の`renderProgressSpine()`から**どのタブに遷移しても必ず呼ばれる**）も`getOfficerPayEntry(year, month)`を旧シグネチャのまま呼んでいた。これはTask 2のインターフェース一覧に載せ忘れていた呼び出し箇所で、`renderProgressSpine()`はどのタブの`render()`よりも先に実行されるため、これを直さない限り**銀行タブを含む全タブが真っ白になる**（見た目上の警告どころか、そのタブ自身は無関係でもレンダリングが止まる）。Task 3完了時点でこれに気づき、`officerDone`を「登録済みの全役員が当月分の入力を持っているか」で判定するように直接修正済み（コミット`f12cd76`に含まれる）。次にこの計画を最初から実行する人は、Task 2の完了条件に「`db.js`内で`getOfficerPayEntry`/`resolveOfficerDeductions`を呼んでいる箇所を`grep -rn`で全て洗い出し、`getSectionCompletion()`も含めて全て新シグネチャに追随させる」を追加しておくとよい。
 
 ---
 
