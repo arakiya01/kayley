@@ -1590,6 +1590,28 @@ function netPayFor(year, month) {
 
 `js/views/report.js`内、`${yen(payEntry ? payEntry.gross_pay : 0)}`という文字列が2箇所ある（136行目付近・196行目付近）。どちらも`${yen(grossPayTotal)}`に置き換える。
 
+**【実行時に発覚し追加された】Step 4の修正: `deductions`変数を消してしまわないようにする**
+
+Step 4で`const deductions = resolveOfficerDeductions(year, month);`を削除したが、`js/views/report.js`のさらに下（家賃控除・水道光熱費控除を表示する行）で`deductions.rent_deduction`/`deductions.utility_deduction`をまだ参照している箇所がある（本タスクのStepでは触れていない、ファイル後方の`<tr><td>家賃控除</td>...`のあたり）。Step 4の置き換え後にこの`deductions`変数の定義が無くなり、`ReferenceError`でレポートタブ全体がクラッシュする。Step 4の置き換えコードは、以下のように`deductions`という名前を残した上で全役員分を合算する形に直す必要がある:
+
+```js
+  const officerEntries = listOfficerPayEntries(year, month);
+  const grossPayTotal = officerEntries.reduce((a, e) => a + (e.gross_pay || 0), 0);
+  const deductionRows = officerEntries.length ? DEDUCTION_FIELDS.map((f) => ({
+    label: f.label,
+    value: officerEntries.reduce((a, e) => a + (e[f.key] || 0), 0),
+  })) : [];
+  const officerDeductionsList = officerEntries.map((e) => resolveOfficerDeductions(e.officer_id, year, month));
+  const deductions = {
+    rent_deduction: officerDeductionsList.reduce((a, d) => a + d.rent_deduction, 0),
+    utility_deduction: officerDeductionsList.reduce((a, d) => a + d.utility_deduction, 0),
+  };
+  const deductionTotal = deductionRows.reduce((a, r) => a + r.value, 0) + deductions.rent_deduction + deductions.utility_deduction;
+  const netPay = grossPayTotal - deductionTotal;
+```
+
+（`ddce0d1`のコミットで修正済み。次にこのタスクを最初から実行する人は、Step 4で変数を削除・改名する前に`grep -n "deductions\."`でファイル全体の参照箇所を確認しておくとよい。）
+
 - [ ] **Step 8: 構文チェック**
 
 Run: `cd /home/lima.guest/projects/kayley && node --check js/views/dashboard.js && node --check js/views/report.js`
