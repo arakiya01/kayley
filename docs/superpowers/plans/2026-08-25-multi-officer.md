@@ -40,6 +40,7 @@
 2. **ブラウザ検証**: プロジェクトルートで`python3 -m http.server 8900 --directory /home/lima.guest/projects/kayley`を起動し、Playwright（`chromium.launch()`）で開いて、`page.evaluate()`内で`await import('/js/db.js')`してデータを直接投入し、DOM・コンソールエラーを確認する。検証スクリプトは作業用ディレクトリに置き、リポジトリにはコミットしない
 3. `migrateOfficers()`の「既存データがある場合の移行」分岐（`legacyCount > 0`）は、既存の`ensureColumn`/`migrateColumns`と同じ理由で専用の単体テストを書かない — この関数群はDB内部の生SQLで直接状態を作らないと再現できず、公開APIの外側の話になるため。新規インストール（`legacyCount === 0`で即returnする分岐）は各タスクのPlaywright検証で毎回自然にカバーされる
 4. 各タスクの最後に`git add` → `git commit`する。コミットメッセージは日本語、既存コミットと同じ粒度（1〜2行の要約＋箇条書きの本文）
+5. **既知の過渡的な状態**: Task 2〜6の間は、`officerpay.js`/`dashboard.js`/`report.js`がまだ新しい`getOfficerPayEntry(officerId, year, month)`シグネチャに追随していない（Task 5〜7で対応する）。この間、デフォルトタブ（ダッシュボード）を開くと`getOfficerPayEntry(year, month)`が2引数のまま3引数関数を呼ぶことになり、コンソールに`Wrong API use : tried to bind a value of an unknown type (undefined).`という警告が出る。これはTask 2で確認済みの、既知・想定内の過渡的な症状であり、Task 2〜4の検証スクリプトで`errors`をチェックする際はこの特定のメッセージだけは許容する（他の新しいエラーが混ざっていないかだけ確認する）。Task 7完了後の全体回帰検証（Task 8）では、この警告も含めて`errors`が`[]`になっていることを確認する
 
 ---
 
@@ -161,6 +162,78 @@ export function archiveOfficer(id, archived = 1) {
   run('UPDATE officers SET archived=? WHERE id=?', [archived ? 1 : 0, id]);
 }
 ```
+
+- [ ] **【実行時に発覚し追加された】Step 5.5: `officer_pay_entries`の旧UNIQUE制約を作り直す**
+
+実行中、Step 2の`ensureColumn`だけでは不十分なことが判明した: 旧スキーマの`officer_pay_entries`は`UNIQUE(year, month)`制約を持っており、これが残っていると`officer_id`の値に関わらず「同じ年月の行は1件だけ」という制約が効いてしまい、複数役員分の行を同じ月に insert できない（`upsertOfficerPayEntry`をアプリケーション層で書き換えただけでは、SQLite側の古い制約が先に弾く）。`ALTER TABLE`では既存のUNIQUE制約を外せないため、テーブルを作り直して移す必要がある。
+
+`SCHEMA`定数内の`officer_pay_entries`テーブル定義を以下に置き換える（`officer_id`列を追加し、`UNIQUE(year, month)`を`UNIQUE(officer_id, year, month)`に変える。新規インストールはこれで正しく作られる）:
+
+```sql
+CREATE TABLE IF NOT EXISTS officer_pay_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  officer_id INTEGER,
+  year INTEGER NOT NULL,
+  month INTEGER NOT NULL,
+  gross_pay INTEGER NOT NULL DEFAULT 0,
+  health_insurance INTEGER NOT NULL DEFAULT 0,
+  nursing_care_insurance INTEGER NOT NULL DEFAULT 0,
+  pension INTEGER NOT NULL DEFAULT 0,
+  child_support_levy INTEGER NOT NULL DEFAULT 0,
+  withholding_tax INTEGER NOT NULL DEFAULT 0,
+  use_auto_deduction INTEGER NOT NULL DEFAULT 1,
+  manual_rent_deduction INTEGER NOT NULL DEFAULT 0,
+  manual_utility_deduction INTEGER NOT NULL DEFAULT 0,
+  employer_insurance_total INTEGER,
+  note TEXT,
+  UNIQUE(officer_id, year, month)
+);
+```
+
+既存ユーザーのDB（テーブルが既に古い制約で作られている）向けに、`migrateColumns()`の直後・`migrateOfficers()`の直前に呼ぶ新しい移行関数を追加する:
+
+```js
+// 旧スキーマの officer_pay_entries は UNIQUE(year, month) 制約を持っており、
+// これが残っていると officer_id の値に関わらず「同じ年月の行は1件だけ」という
+// 制約が効いてしまい、複数役員分の行を同じ月に insert できない。
+// ALTER TABLE では既存のUNIQUE制約を外せないため、テーブルを作り直して移す。
+// 既に新しい制約（UNIQUE(officer_id, year, month)）になっていれば何もしない
+// （sqlite_master の定義文を見て判定するので、何度呼んでも安全）。
+function migrateOfficerPayEntriesConstraint() {
+  const row = one("SELECT sql FROM sqlite_master WHERE type='table' AND name='officer_pay_entries'");
+  if (!row || !row.sql || !row.sql.includes('UNIQUE(year, month)')) return;
+  run('ALTER TABLE officer_pay_entries RENAME TO officer_pay_entries_old');
+  run(`CREATE TABLE officer_pay_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    officer_id INTEGER,
+    year INTEGER NOT NULL,
+    month INTEGER NOT NULL,
+    gross_pay INTEGER NOT NULL DEFAULT 0,
+    health_insurance INTEGER NOT NULL DEFAULT 0,
+    nursing_care_insurance INTEGER NOT NULL DEFAULT 0,
+    pension INTEGER NOT NULL DEFAULT 0,
+    child_support_levy INTEGER NOT NULL DEFAULT 0,
+    withholding_tax INTEGER NOT NULL DEFAULT 0,
+    use_auto_deduction INTEGER NOT NULL DEFAULT 1,
+    manual_rent_deduction INTEGER NOT NULL DEFAULT 0,
+    manual_utility_deduction INTEGER NOT NULL DEFAULT 0,
+    employer_insurance_total INTEGER,
+    note TEXT,
+    UNIQUE(officer_id, year, month)
+  )`);
+  run(`INSERT INTO officer_pay_entries
+         (id, officer_id, year, month, gross_pay, health_insurance, nursing_care_insurance, pension,
+          child_support_levy, withholding_tax, use_auto_deduction, manual_rent_deduction,
+          manual_utility_deduction, employer_insurance_total, note)
+       SELECT id, officer_id, year, month, gross_pay, health_insurance, nursing_care_insurance, pension,
+              child_support_levy, withholding_tax, use_auto_deduction, manual_rent_deduction,
+              manual_utility_deduction, employer_insurance_total, note
+       FROM officer_pay_entries_old`);
+  run('DROP TABLE officer_pay_entries_old');
+}
+```
+
+（すでに`062b036`のコミットで適用済み。次にこのタスクを実行する人は、この修正が反映された状態から始める。）
 
 - [ ] **Step 6: 構文チェック**
 
