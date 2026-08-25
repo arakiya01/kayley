@@ -46,6 +46,7 @@ export function render(container, ctx) {
         <h2>役員</h2>
         <div class="toolbar"><button class="btn ghost" id="add-officer-btn">＋ 役員を追加</button></div>
       </div>
+      <div class="card-note">完了印は、在籍中の役員全員分の給与明細がこの月に入力されると付きます。</div>
       <div id="officer-list-slot"></div>
     </div>
     <div id="add-officer-form-slot"></div>
@@ -127,6 +128,10 @@ export function render(container, ctx) {
           <div class="field-value"><input type="text" id="new-officer-name" placeholder="例: 荒木道子"></div>
         </div>
         <div class="field-row">
+          <div class="field-label">役職</div>
+          <div class="field-value"><input type="text" id="new-officer-role" placeholder="例: 取締役"></div>
+        </div>
+        <div class="field-row">
           <div class="field-label">自宅の家賃・水道光熱費を天引きする</div>
           <div class="field-value"><input type="checkbox" id="new-officer-home-deduction"></div>
         </div>
@@ -139,8 +144,9 @@ export function render(container, ctx) {
     slot.querySelector('#save-officer-btn').addEventListener('click', () => {
       const name = slot.querySelector('#new-officer-name').value.trim();
       if (!name) return;
+      const role = slot.querySelector('#new-officer-role').value.trim();
       const homeDeduction = slot.querySelector('#new-officer-home-deduction').checked;
-      const id = upsertOfficer({ name, home_office_deduction: homeDeduction });
+      const id = upsertOfficer({ name, role, home_office_deduction: homeDeduction });
       slot.innerHTML = '';
       selectedOfficerId = id;
       render(container, ctx);
@@ -373,11 +379,12 @@ export function render(container, ctx) {
     }
     slot.innerHTML = `
       <table class="ledger">
-        <thead><tr><th>氏名</th><th>状態</th><th>自宅の家賃・光熱費を天引き</th><th></th><th></th></tr></thead>
+        <thead><tr><th>氏名</th><th>役職</th><th>状態</th><th>自宅の家賃・光熱費を天引き</th><th></th><th></th></tr></thead>
         <tbody>
           ${officers.map((o) => `
             <tr data-officer-id="${o.id}" class="${o.id === selectedOfficerId ? 'selected-row' : ''}">
-              <td>${escapeHtml(o.name)}</td>
+              <td><input type="text" class="officer-name-input" data-id="${o.id}" value="${escapeHtml(o.name)}"></td>
+              <td><input type="text" class="officer-role-input" data-id="${o.id}" value="${escapeHtml(o.role || '')}" placeholder="役職"></td>
               <td>${o.archived ? '休止中' : '有効'}</td>
               <td><input type="checkbox" class="officer-home-deduction" data-id="${o.id}" ${o.home_office_deduction ? 'checked' : ''}></td>
               <td><button class="btn ghost select-officer-btn" data-id="${o.id}">選ぶ</button></td>
@@ -403,6 +410,22 @@ export function render(container, ctx) {
       checkbox.addEventListener('change', () => {
         const officer = officers.find((o) => o.id === Number(checkbox.dataset.id));
         upsertOfficer({ ...officer, home_office_deduction: checkbox.checked });
+        render(container, ctx);
+      });
+    });
+    slot.querySelectorAll('.officer-name-input').forEach((input) => {
+      input.addEventListener('change', () => {
+        const officer = officers.find((o) => o.id === Number(input.dataset.id));
+        const name = input.value.trim();
+        if (!name) { input.value = officer.name; return; }
+        upsertOfficer({ ...officer, name });
+        render(container, ctx);
+      });
+    });
+    slot.querySelectorAll('.officer-role-input').forEach((input) => {
+      input.addEventListener('change', () => {
+        const officer = officers.find((o) => o.id === Number(input.dataset.id));
+        upsertOfficer({ ...officer, role: input.value.trim() });
         render(container, ctx);
       });
     });

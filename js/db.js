@@ -246,6 +246,7 @@ function migrateColumns() {
   ensureColumn('officer_pay_entries', 'officer_id', 'INTEGER');
   ensureColumn('rent_utility_entries', 'employer_insurance_total', 'INTEGER');
   ensureColumn('bank_transaction_links', 'officer_id', 'INTEGER REFERENCES officers(id)');
+  ensureColumn('officers', 'role', 'TEXT');
 }
 
 // 旧スキーマの officer_pay_entries は UNIQUE(year, month) 制約を持っており、
@@ -532,14 +533,14 @@ export function getOfficer(id) {
 export function upsertOfficer(officer) {
   if (officer.id) {
     run(
-      'UPDATE officers SET name=?, home_office_deduction=? WHERE id=?',
-      [officer.name, officer.home_office_deduction ? 1 : 0, officer.id]
+      'UPDATE officers SET name=?, role=?, home_office_deduction=? WHERE id=?',
+      [officer.name, officer.role || null, officer.home_office_deduction ? 1 : 0, officer.id]
     );
     return officer.id;
   }
   run(
-    'INSERT INTO officers (name, sort_order, archived, home_office_deduction) VALUES (?, ?, 0, ?)',
-    [officer.name, officer.sort_order || 0, officer.home_office_deduction ? 1 : 0]
+    'INSERT INTO officers (name, role, sort_order, archived, home_office_deduction) VALUES (?, ?, ?, 0, ?)',
+    [officer.name, officer.role || null, officer.sort_order || 0, officer.home_office_deduction ? 1 : 0]
   );
   return one('SELECT last_insert_rowid() AS id').id;
 }
