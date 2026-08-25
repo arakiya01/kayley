@@ -1292,6 +1292,40 @@ const BULK_FIELDS = [{ key: 'gross_pay', label: '支給額' }, ...DEDUCTION_FIEL
     }
 ```
 
+**【実行時に発覚し追加された】Step 5.5: `save()`と`recompute()`内の、まだガードできていない参照をガードする**
+
+上記だけでは不十分だった。`save()`関数内で`entry`オブジェクトを作る際の以下の2行:
+
+```js
+      manual_rent_deduction: parseCurrencyInput(container.querySelector('#manual_rent_deduction').value),
+      manual_utility_deduction: parseCurrencyInput(container.querySelector('#manual_utility_deduction').value),
+```
+
+は、`selectedOfficer.home_office_deduction`が偽の役員（`#manual_rent_deduction`/`#manual_utility_deduction`要素がDOMに存在しない）を選んだ状態で保存すると、`querySelector`が`null`を返し`.value`の参照で例外が発生し、**`save()`全体が失敗してその役員のその回の保存が丸ごと失われる**（画面には保存されたように見えても実際にはDBに書き込まれない）。以下に置き換える:
+
+```js
+      manual_rent_deduction: selectedOfficer.home_office_deduction ? parseCurrencyInput(container.querySelector('#manual_rent_deduction').value) : 0,
+      manual_utility_deduction: selectedOfficer.home_office_deduction ? parseCurrencyInput(container.querySelector('#manual_utility_deduction').value) : 0,
+```
+
+同様に`recompute(entry)`関数内の以下の2行:
+
+```js
+    container.querySelector('#rent-deduction-display').innerHTML = `${yen(d.rent_deduction)}<span class="unit">円</span>`;
+    container.querySelector('#utility-deduction-display').innerHTML = `${yen(d.utility_deduction)}<span class="unit">円</span>`;
+```
+
+も同じ理由（`home_office_deduction`が偽の役員では対応する要素がDOMに存在しない）で例外を投げる。以下に置き換える:
+
+```js
+    if (selectedOfficer.home_office_deduction) {
+      container.querySelector('#rent-deduction-display').innerHTML = `${yen(d.rent_deduction)}<span class="unit">円</span>`;
+      container.querySelector('#utility-deduction-display').innerHTML = `${yen(d.utility_deduction)}<span class="unit">円</span>`;
+    }
+```
+
+（両方とも`be6b5c4`のコミットで修正済み。次にこのタスクを最初から実行する人は、Step 4でHTMLを条件付き表示にした時点で、そのブロック内の要素IDを参照している箇所を`grep -n`で全て洗い出し、`home_office_deduction`のガードを漏れなく揃えるとよい。）
+
 - [ ] **Step 5: 残りの呼び出し箇所すべてに`selectedOfficerId`を渡す**
 
 以下の既存呼び出し箇所を、示した通りに書き換える:
