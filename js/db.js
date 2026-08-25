@@ -1050,14 +1050,14 @@ export function listAllBankTransactions() {
 /* ---------------- 銀行取引のリンク（裏付け先の記録） ---------------- */
 
 export function linkBankTransaction({
-  bank_transaction_id, kind, client_id, category,
+  bank_transaction_id, kind, client_id, officer_id, category,
   period_start_year, period_start_month, period_end_year, period_end_month, note,
 }) {
   run(
     `INSERT INTO bank_transaction_links
-       (bank_transaction_id, kind, client_id, category, period_start_year, period_start_month, period_end_year, period_end_month, note, confirmed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [bank_transaction_id, kind, client_id || null, category || null,
+       (bank_transaction_id, kind, client_id, officer_id, category, period_start_year, period_start_month, period_end_year, period_end_month, note, confirmed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [bank_transaction_id, kind, client_id || null, officer_id || null, category || null,
      period_start_year || null, period_start_month || null, period_end_year || null, period_end_month || null,
      note || null, new Date().toISOString()]
   );
@@ -1117,10 +1117,11 @@ export function derivePeriodForKind(kind, year, month) {
 }
 
 // 指定した種類・年月に対して、単月でリンクされている銀行取引の合計金額と件数。
-export function sumLinkedBankAmount({ kind, client_id, year, month }) {
+export function sumLinkedBankAmount({ kind, client_id, officer_id, year, month }) {
   const conditions = ['l.kind=?', 'l.period_start_year=?', 'l.period_start_month=?'];
   const params = [kind, year, month];
   if (client_id != null) { conditions.push('l.client_id=?'); params.push(client_id); }
+  if (officer_id != null) { conditions.push('l.officer_id=?'); params.push(officer_id); }
   const row = one(
     `SELECT COALESCE(SUM(t.amount), 0) AS total, COUNT(*) AS count
      FROM bank_transaction_links l JOIN bank_transactions t ON t.id = l.bank_transaction_id
@@ -1150,21 +1151,21 @@ export function computeRentBackingStatus(year, month) {
   return { status: bankAmount === expectedTotal ? 'matched' : 'mismatch', bankAmount, expectedTotal, count };
 }
 
-export function computeOfficerNetBackingStatus(year, month) {
-  const entry = getOfficerPayEntry(year, month);
+export function computeOfficerNetBackingStatus(officerId, year, month) {
+  const entry = getOfficerPayEntry(officerId, year, month);
   if (!entry) return { status: 'none', bankAmount: 0, expectedTotal: 0, count: 0 };
-  const deductions = resolveOfficerDeductions(year, month);
+  const deductions = resolveOfficerDeductions(officerId, year, month);
   const deductionTotal = ['health_insurance', 'nursing_care_insurance', 'pension', 'child_support_levy', 'withholding_tax']
     .reduce((a, k) => a + (entry[k] || 0), 0) + deductions.rent_deduction + deductions.utility_deduction;
   const expectedTotal = entry.gross_pay - deductionTotal;
-  const { total: bankTotal, count } = sumLinkedBankAmount({ kind: 'officer_net', year, month });
+  const { total: bankTotal, count } = sumLinkedBankAmount({ kind: 'officer_net', officer_id: officerId, year, month });
   if (count === 0) return { status: 'none', bankAmount: 0, expectedTotal, count: 0 };
   const bankAmount = Math.abs(bankTotal);
   return { status: bankAmount === expectedTotal ? 'matched' : 'mismatch', bankAmount, expectedTotal, count };
 }
 
 export function computeOfficerInsuranceBackingStatus(year, month) {
-  const entry = getOfficerPayEntry(year, month);
+  const entry = getRentUtilityEntry(year, month);
   const expectedTotal = entry ? (entry.employer_insurance_total || 0) : 0;
   const { total: bankTotal, count } = sumLinkedBankAmount({ kind: 'officer_insurance', year, month });
   if (count === 0) return { status: 'none', bankAmount: 0, expectedTotal, count: 0 };
@@ -1178,8 +1179,7 @@ export function computeOfficerWithholdingBackingStatus(year, month) {
   let expectedTotal = 0;
   let cursor = { ...period.start };
   while (cursor.year * 12 + cursor.month <= period.end.year * 12 + period.end.month) {
-    const e = getOfficerPayEntry(cursor.year, cursor.month);
-    if (e) expectedTotal += e.withholding_tax || 0;
+    listOfficerPayEntries(cursor.year, cursor.month).forEach((e) => { expectedTotal += e.withholding_tax || 0; });
     cursor = cursor.month === 12 ? { year: cursor.year + 1, month: 1 } : { year: cursor.year, month: cursor.month + 1 };
   }
   const { total: bankTotal, count } = sumLinkedBankAmountForPeriod({
