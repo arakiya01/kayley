@@ -199,7 +199,7 @@ export const ACCOUNT_TITLES = [
 // 分類するための固定リスト。一致するものが無ければ「その他」に寄せ、税理士側での確認を前提とする。
 export const IRREGULAR_CATEGORIES = [
   '源泉所得税（納期の特例）', '住民税特別徴収', '法人税等予定納税',
-  '消費税中間納付', '労働保険年度更新', 'その他',
+  '消費税中間納付', '労働保険年度更新', '立替精算', 'その他',
 ];
 
 // 摘要から対応ルールのキーを作る。全角/半角ゆれと空白ゆれだけ吸収し、
@@ -1080,12 +1080,14 @@ export function computeArBackingStatus(clientId) {
 
 // 未分類の銀行取引に、学習済みの振込名義ルールを適用する。適用件数を返す。
 // 既にリンク済みの取引は対象にしない（applyAccountRulesToMonthと同じ非破壊の原則）。
+// officer_net（役員報酬手取り）だけは対象外: 役員個人の口座は立替精算など別目的の
+// 振込も同じ摘要で受け取ることがあり、摘要だけでは自動判定できないため毎回手動確認とする。
 export function applyBankPayeeAliasesToAccount(bankAccountId) {
   const unlinked = listBankTransactions(bankAccountId, { onlyUnlinked: true });
   let applied = 0;
   unlinked.forEach((t) => {
     const alias = getBankPayeeAlias(t.description);
-    if (!alias) return;
+    if (!alias || alias.kind === 'officer_net') return;
     const [y, m] = t.txn_date.split('-').map(Number);
     const period = derivePeriodForKind(alias.kind, y, m);
     linkBankTransaction({ bank_transaction_id: t.id, kind: alias.kind, client_id: alias.client_id, category: alias.category, ...period });

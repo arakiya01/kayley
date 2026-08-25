@@ -230,7 +230,7 @@ export function render(container) {
                 <tr data-txn-id="${t.id}">
                   <td>${escapeHtml(t.txn_date)}</td>
                   <td class="desc">${escapeHtml(t.description)}</td>
-                  <td class="num">${t.amount >= 0 ? yen(t.amount) : `−${yen(Math.abs(t.amount))}`}</td>
+                  <td class="num ${t.amount >= 0 ? 'txn-amount-in' : 'txn-amount-out'}">${t.amount >= 0 ? yen(t.amount) : `−${yen(Math.abs(t.amount))}`}</td>
                   <td>${links.length > 0 ? linkSummaryHtml(links[0], clients) : `<button class="btn ghost link-btn" data-id="${t.id}">分類する</button>`}</td>
                 </tr>
                 <tr class="link-editor-row" data-editor-for="${t.id}" style="display:none"><td colspan="4"></td></tr>
@@ -341,7 +341,15 @@ export function render(container) {
       if (kind === 'expense_card') category = cell.querySelector(`#link-card-${txnId}`)?.value || null;
       const period = derivePeriodForKind(kind, ty, tm);
       linkBankTransaction({ bank_transaction_id: txnId, kind, client_id: clientId, category, ...period });
-      learnBankPayeeAlias(txn.description, { kind, client_id: clientId, category });
+      // officer_net（役員報酬手取り）は学習しない: 役員個人の口座は立替精算など
+      // 別目的の振込も同じ摘要で受け取ることがあり、自動分類の元にすると誤爆するため。
+      if (kind !== 'officer_net') learnBankPayeeAlias(txn.description, { kind, client_id: clientId, category });
+      // 同じ摘要の他の未分類取引にも今学習したルールをその場で適用する。
+      // CSV再取込を待たずに「一回分類したら以後も自動で」を成立させるため。
+      const aliasApplied = applyBankPayeeAliasesToAccount(accountId);
+      if (aliasApplied > 0) {
+        container.querySelector('#import-status').textContent = `同じ摘要の取引を他に${aliasApplied}件、自動で分類しました`;
+      }
       renderTransactionList(accountId);
     });
   }

@@ -468,6 +468,8 @@ table.ledger td.num, table.ledger th.num {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
+.txn-amount-in { color: var(--status-good); }
+.txn-amount-out { color: var(--status-critical); }
 
 /* ---------- bulk (一括入力) grid ---------- */
 
