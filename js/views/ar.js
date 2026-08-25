@@ -39,7 +39,7 @@ export function render(container, ctx) {
           <button class="btn ghost" id="bulk-toggle-btn">${bulkMode ? '月次入力に戻る' : '📋 一括入力（年度）'}</button>
         </div>
       </div>
-      <div class="card-note">得意先ごとの当月売上・入金を記録します。残高は自動で繰り越し計算されます。</div>
+      <div class="card-note">得意先ごとの当月売上・入金を記録します。残高は自動で繰り越し計算されます。完了印は、この月の売上・入金が1件でも入力されると付きます。</div>
       <div id="ar-table-slot"></div>
     </div>
     <details class="card settings-fold">
@@ -163,7 +163,7 @@ export function render(container, ctx) {
   function renderTable() {
     if (bulkMode) { renderBulkTable(); return; }
     const slot = container.querySelector('#ar-table-slot');
-    const activeClients = listClientsForMonth(year, month);
+    const activeClients = listClientsForMonth(year, month).filter((c) => clientTradeAllowsMonth(c, year, month));
     const gdriveConfigured = !!getMeta('gdrive_client_id');
     const monthAttachments = listAttachments(year, month);
     if (activeClients.length === 0) {

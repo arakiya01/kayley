@@ -1094,11 +1094,12 @@ export function derivePeriodForKind(kind, year, month) {
 }
 
 // 指定した種類・年月に対して、単月でリンクされている銀行取引の合計金額と件数。
-export function sumLinkedBankAmount({ kind, client_id, officer_id, year, month }) {
+export function sumLinkedBankAmount({ kind, client_id, officer_id, category, year, month }) {
   const conditions = ['l.kind=?', 'l.period_start_year=?', 'l.period_start_month=?'];
   const params = [kind, year, month];
   if (client_id != null) { conditions.push('l.client_id=?'); params.push(client_id); }
   if (officer_id != null) { conditions.push('l.officer_id=?'); params.push(officer_id); }
+  if (category != null) { conditions.push('l.category=?'); params.push(category); }
   const row = one(
     `SELECT COALESCE(SUM(t.amount), 0) AS total, COUNT(*) AS count
      FROM bank_transaction_links l JOIN bank_transactions t ON t.id = l.bank_transaction_id
@@ -1181,8 +1182,27 @@ export function computeArBackingStatus(clientId) {
      WHERE l.kind='ar' AND l.client_id=?`,
     [clientId]
   );
-  if (row.count === 0) return { status: 'none', bankAmount: 0, expectedTotal, count: 0 };
+  // 入金実績（expectedTotal）がまだゼロなら、銀行リンクが無いのは「まだ入金されていない」
+  // だけで異常ではない。売上は立ったが未入金という状態を「銀行未整合」と混同しないよう、
+  // バッジ自体を出さない not_applicable にする。
+  if (row.count === 0) {
+    return expectedTotal === 0
+      ? { status: 'not_applicable', bankAmount: 0, expectedTotal, count: 0 }
+      : { status: 'none', bankAmount: 0, expectedTotal, count: 0 };
+  }
   return { status: row.total === expectedTotal ? 'matched' : 'mismatch', bankAmount: row.total, expectedTotal, count: row.count };
+}
+
+// 経費タブのカード引落と銀行の突き合わせ。カード名（bank_transaction_links.category）で、
+// その月にカードで計上した経費合計と、銀行側で expense_card としてそのカード名に
+// リンクされた引落合計を比較する。まだ何も無い月（経費も銀行リンクも無い）は
+// not_applicable にして、他の裏付けバッジと同じくバッジ自体を出さない。
+export function computeExpenseCardBackingStatus(source, year, month) {
+  const expectedTotal = listStatementTransactions(source.id, year, month).reduce((sum, t) => sum + t.amount, 0);
+  const { total: bankTotal, count } = sumLinkedBankAmount({ kind: 'expense_card', category: source.name, year, month });
+  if (count === 0) return { status: expectedTotal === 0 ? 'not_applicable' : 'none', bankAmount: 0, expectedTotal, count: 0 };
+  const bankAmount = Math.abs(bankTotal);
+  return { status: bankAmount === expectedTotal ? 'matched' : 'mismatch', bankAmount, expectedTotal, count };
 }
 
 export async function importBytes(bytes) {

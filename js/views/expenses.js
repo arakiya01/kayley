@@ -8,13 +8,14 @@ import {
   listPaymentSources, upsertPaymentSource, archivePaymentSource,
   listStatementTransactions, addStatementTransaction, removeStatementTransaction, clearStatementTransactions,
   ACCOUNT_TITLES, setTransactionAccountTitle, learnAccountRule, applyAccountRulesToMonth,
-  listAllStatementTransactions,
+  listAllStatementTransactions, computeExpenseCardBackingStatus,
 } from '../db.js';
 import { yen, escapeHtml, monthLabel } from '../format.js';
 import * as gdrive from '../gdrive.js';
 import { extractPdfTextRows, detectAndParse } from '../statementparsers.js';
 import { fileChipHtml } from '../fileicon.js';
 import { parseCurrencyInput, enableCurrencyInput } from '../currencyinput.js';
+import { bankBadgeHtml } from '../bankbadge.js';
 
 let showAddSourceForm = false;
 const cashFormOpenFor = new Set();
@@ -37,6 +38,7 @@ export function render(container, ctx) {
       <div class="card-note">
         カードの利用明細（PDF）をアップロードすると、1件ずつの取引に自動で展開します。
         現金の利用はまれだと思うので、手入力で追加できます。
+        完了印は、当月の経費データが1件以上あり、すべての明細に勘定科目が選ばれると付きます。
       </div>
       <div class="card-grid" style="margin-bottom:16px">
         <div class="stat-tile">
@@ -122,6 +124,7 @@ export function render(container, ctx) {
     const sourceRows = sources.map((source) => ({ source, txns: listStatementTransactions(source.id, year, month) }));
     const populated = sourceRows.filter((row) => row.txns.length > 0);
     const empty = sourceRows.filter((row) => row.txns.length === 0);
+    const cardBadge = (s) => s.kind === 'card' ? bankBadgeHtml(computeExpenseCardBackingStatus(s, year, month)) : '';
     const sourceActions = (s) => `
       ${s.kind === 'card' ? `
         <label class="btn ghost" style="cursor:pointer">
@@ -136,6 +139,7 @@ export function render(container, ctx) {
         <div class="toolbar">
           <h2 style="margin:0">${escapeHtml(s.name)}</h2>
           <span class="badge good" style="margin-left:8px">${s.kind === 'cash' ? '現金' : 'カード'}</span>
+          ${cardBadge(s)}
           <span class="spacer"></span>
           ${sourceActions(s)}
         </div>
@@ -150,6 +154,7 @@ export function render(container, ctx) {
           <div class="compact-source-row" data-source-id="${s.id}">
             <strong>${escapeHtml(s.name)}</strong>
             <span class="badge good">${s.kind === 'cash' ? '現金' : 'カード'}</span>
+            ${cardBadge(s)}
             <span class="spacer"></span>
             ${sourceActions(s)}
             <div class="statement-status" data-source-id="${s.id}"></div>
