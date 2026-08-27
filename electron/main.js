@@ -63,6 +63,12 @@ const DATA_DIR = app.getPath('userData');
 const DB_PATH = path.join(DATA_DIR, 'kayley.sqlite');
 const ATTACHMENTS_DIR = path.join(DATA_DIR, 'attachments');
 
+// preload.js（サンドボックス化されており、../package.json のような任意ファイルを
+// requireできない）から同期的にバージョンを取得できるようにする。
+ipcMain.on('app:version-sync', (event) => {
+  event.returnValue = app.getVersion();
+});
+
 ipcMain.handle('db:save', async (event, bytes) => {
   await fs.writeFile(DB_PATH, Buffer.from(bytes));
 });
@@ -140,7 +146,9 @@ async function createWindow() {
     event.preventDefault();
     const flush = mainWindow.webContents.executeJavaScript(
       'window.__kayleyFlushSave ? window.__kayleyFlushSave() : Promise.resolve()'
-    ).catch(() => {});
+    ).catch((err) => {
+      console.error('終了前の保存に失敗しました:', err);
+    });
     const timeout = new Promise((resolve) => setTimeout(resolve, 3000));
     Promise.race([flush, timeout]).then(() => {
       closeConfirmed = true;
