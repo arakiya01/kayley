@@ -6,13 +6,14 @@
   "main": "electron/main.js",
   "scripts": {
     "start": "electron .",
-    "dist:mac": "electron-builder --mac --publish=never",
+    "dist:mac": "electron-builder --mac dir --x64 --arm64 --publish=never && node scripts/package-mac-zips.mjs",
     "dist:win": "electron-builder --win --publish=never",
-    "dist:all": "electron-builder --mac --win --publish=never"
+    "dist:all": "npm run dist:mac && npm run dist:win"
   },
   "devDependencies": {
     "electron": "^32.0.0",
-    "electron-builder": "^25.0.0"
+    "electron-builder": "^25.0.0",
+    "7zip-bin": "^5.2.0"
   },
   "build": {
     "appId": "jp.alaland.kayley",
@@ -32,7 +33,7 @@
       "buildResources": "build"
     },
     "mac": {
-      "target": ["zip"],
+      "target": ["dir"],
       "category": "public.app-category.finance",
       "icon": "build/icon.icns"
     },
