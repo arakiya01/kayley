@@ -168,7 +168,10 @@ nav.tabs a.active {
 .progress-spine { padding:26px 4px 16px; margin-bottom:24px; border-bottom:3px double var(--grid-line); }
 .spine-top { display:flex; align-items:center; gap:14px; min-height:38px; }
 .wordmark-link { display:flex; align-items:baseline; gap:12px; margin-right:auto; }
-.wordmark-link a.display { font-size:28px; text-decoration:none; }
+.brand-mark { display:flex; align-items:center; gap:8px; text-decoration:none; }
+.brand-mark .display { font-size:28px; }
+.brand-logo { flex-shrink:0; }
+.version-badge { font-family:var(--font-mono); font-size:11px; color:var(--ink-soft); align-self:flex-end; padding-bottom:4px; }
 .wordmark-link small { font-size:12.5px; color:var(--ink-soft); }
 .wordmark-link small a { color:var(--ink-soft); }
 .spine-divider { width:1px; height:18px; background:var(--grid-line); }

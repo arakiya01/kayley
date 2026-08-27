@@ -1,6 +1,6 @@
 {
   "name": "kayley",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "description": "一人法人・個人事業主のための月次帳簿デスクトップアプリ",
   "private": true,
   "main": "electron/main.js",
