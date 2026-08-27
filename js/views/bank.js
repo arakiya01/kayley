@@ -291,7 +291,7 @@ export function render(container, ctx) {
       <div class="card">
         <div class="card-header">
           <h2>明細</h2>
-          <div class="toolbar">
+          <div class="toolbar bank-toolbar">
             <div class="bank-filter-group period-filter-group">
               <input type="date" id="range-from" aria-label="明細の開始日" value="${rangeFrom}" max="${todayStr}">
               <span>〜</span>

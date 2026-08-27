@@ -645,6 +645,10 @@ span.file-chip { cursor: default; }
 }
 .toolbar .spacer { flex: 1; }
 
+.bank-toolbar {
+  flex-basis: 100%;
+}
+
 .bank-filter-group {
   display: flex;
   align-items: center;
@@ -654,6 +658,12 @@ span.file-chip { cursor: default; }
 
 .category-filter-group {
   flex-basis: 100%;
+}
+
+#txn-filter-category {
+  width: auto;
+  min-width: 160px;
+  max-width: 280px;
 }
 
 .btn.ghost.bank-filter-btn.active {
