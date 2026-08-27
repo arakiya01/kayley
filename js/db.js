@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS month_status (
   PRIMARY KEY(year, month)
 );
 
+-- drive_file_id にはローカル保存後のファイルID、web_view_link にはローカルHTTPサーバーの
+-- プレビューURL（/attachments/:fileId）を入れる（列名は移行を避けるため据え置き）。
 CREATE TABLE IF NOT EXISTS attachments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   year INTEGER NOT NULL,
