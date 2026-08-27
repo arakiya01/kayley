@@ -92,6 +92,12 @@ ipcMain.handle('attachment:delete', async (event, fileId) => {
   }
 });
 
+const { checkForUpdate } = require('./updater');
+
+ipcMain.handle('update:check', async () => {
+  return checkForUpdate(app.getVersion());
+});
+
 async function createWindow() {
   const server = await startServer(ATTACHMENTS_DIR);
   const { port } = server.address();
