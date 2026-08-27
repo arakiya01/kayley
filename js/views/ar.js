@@ -12,7 +12,7 @@ import { enableGridPaste } from './gridpaste.js';
 import { lineChart, emptyChart } from '../charts.js';
 import { seriesColor, foldSeriesArrays } from '../colors.js';
 import { bankBadgeHtml } from '../bankbadge.js';
-import * as gdrive from '../gdrive.js';
+import * as localfiles from '../localfiles.js';
 import { fileChipHtml } from '../fileicon.js';
 import { parseCurrencyInput, enableCurrencyInput } from '../currencyinput.js';
 
@@ -164,7 +164,6 @@ export function render(container, ctx) {
     if (bulkMode) { renderBulkTable(); return; }
     const slot = container.querySelector('#ar-table-slot');
     const activeClients = listClientsForMonth(year, month).filter((c) => clientTradeAllowsMonth(c, year, month));
-    const gdriveConfigured = !!getMeta('gdrive_client_id');
     const monthAttachments = listAttachments(year, month);
     if (activeClients.length === 0) {
       emptyChart(slot, 'まだ得意先が登録されていません。「＋ 得意先を追加」から始めましょう。');
@@ -190,9 +189,7 @@ export function render(container, ctx) {
     });
 
     const invoicesFor = (clientId) => monthAttachments.filter((a) => a.category === 'invoice' && a.client_id === clientId);
-    // Drive未連携なら請求書列そのものを出さない（未連携の案内はヘッダの通知で1回だけ伝えている）。
-    // ただし過去に上げた請求書が残っている月では、見えなくならないように列を残す。
-    const showInvoiceColumn = gdriveConfigured || monthAttachments.some((a) => a.category === 'invoice');
+    const showInvoiceColumn = true;
 
     slot.innerHTML = `
       <div class="bulk-table-wrap">
@@ -219,10 +216,10 @@ export function render(container, ctx) {
               <td>${agingBadge(streak)} ${bankBadgeHtml(computeArBackingStatus(client.id))}</td>
               ${showInvoiceColumn ? `<td class="no-print invoice-cell" data-client="${client.id}" style="max-width:200px">
                 <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-                  ${gdriveConfigured ? `<label class="btn ghost" style="cursor:pointer;font-size:11px;padding:4px 8px;white-space:nowrap;display:inline-block">
+                  <label class="btn ghost" style="cursor:pointer;font-size:11px;padding:4px 8px;white-space:nowrap;display:inline-block">
                     ＋請求書
                     <input type="file" class="invoice-file-input" data-client="${client.id}" style="display:none">
-                  </label>` : ''}
+                  </label>
                   ${invoicesFor(client.id).map((it) => `
                     <span style="display:inline-flex;align-items:center;gap:2px">
                       ${fileChipHtml({ name: it.name, webViewLink: it.web_view_link })}
@@ -273,13 +270,13 @@ export function render(container, ctx) {
         const statusEl = slot.querySelector(`.invoice-status[data-client="${clientId}"]`);
         statusEl.textContent = 'アップロード中…';
         try {
-          const uploaded = await gdrive.uploadFile(file, { year, month, category: 'invoice', namePrefix: client.name });
+          const uploaded = await localfiles.uploadFile(file, { namePrefix: client.name });
           addAttachment({
             year, month,
             drive_file_id: uploaded.id,
             name: file.name,
             mime_type: uploaded.mimeType,
-            web_view_link: uploaded.webViewLink,
+            web_view_link: localfiles.previewUrl(uploaded.id),
             category: 'invoice',
             client_id: clientId,
           });
@@ -292,16 +289,13 @@ export function render(container, ctx) {
 
     slot.querySelectorAll('.delete-invoice-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        if (!confirm('この請求書を削除します。よろしいですか？（Googleドライブ上のファイルも削除されます）')) return;
+        if (!confirm('この請求書を削除します。よろしいですか？')) return;
         btn.disabled = true;
-        // Driveの削除が失敗しても、Kayley側の記録は消せないと永久に詰むので分けて処理する。
-        let driveError = null;
-        if (gdrive.isConnected()) {
-          try { await gdrive.deleteFile(btn.dataset.driveId); } catch (err) { driveError = err; }
-        }
+        let fileError = null;
+        try { await localfiles.deleteFile(btn.dataset.driveId); } catch (err) { fileError = err; }
         removeAttachment(Number(btn.dataset.id));
         renderTable();
-        if (driveError) alert(`Kayley側の記録からは削除しましたが、Googleドライブ上のファイルは削除できませんでした: ${driveError.message}\nDrive側は手動で削除してください。`);
+        if (fileError) alert(`Kayley側の記録からは削除しましたが、ファイルの削除に失敗しました: ${fileError.message}`);
       });
     });
   }

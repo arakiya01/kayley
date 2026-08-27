@@ -4,14 +4,14 @@
 // 3) 各取引に領収書を個別に紐づけられる
 // 4) それ以外の、取引に紐づかない領収書は下部の専用欄にまとめて置ける
 import {
-  getMeta, listAttachments, addAttachment, removeAttachment,
+  listAttachments, addAttachment, removeAttachment,
   listPaymentSources, upsertPaymentSource, archivePaymentSource,
   listStatementTransactions, addStatementTransaction, removeStatementTransaction, clearStatementTransactions,
   ACCOUNT_TITLES, setTransactionAccountTitle, learnAccountRule, applyAccountRulesToMonth,
   listAllStatementTransactions, computeExpenseCardBackingStatus,
 } from '../db.js';
 import { yen, escapeHtml, monthLabel } from '../format.js';
-import * as gdrive from '../gdrive.js';
+import * as localfiles from '../localfiles.js';
 import { extractPdfTextRows, detectAndParse } from '../statementparsers.js';
 import { fileChipHtml } from '../fileicon.js';
 import { parseCurrencyInput, enableCurrencyInput } from '../currencyinput.js';
@@ -22,7 +22,6 @@ const cashFormOpenFor = new Set();
 
 export function render(container, ctx) {
   const { year, month } = ctx;
-  const gdriveConfigured = !!getMeta('gdrive_client_id');
   const sources = listPaymentSources();
   applyAccountRulesToMonth(year, month);
   const uncategorizedCount = listAllStatementTransactions(year, month).filter((t) => !t.account_title).length;
@@ -63,10 +62,10 @@ export function render(container, ctx) {
       <div class="card-header">
         <h2>取引に紐づかない領収書</h2>
         <div class="toolbar">
-          ${gdriveConfigured ? `<label class="btn primary" style="cursor:pointer">
+          <label class="btn primary" style="cursor:pointer">
             ＋ 領収書を追加
             <input type="file" id="expense-receipt-input" multiple style="display:none">
-          </label>` : ''}
+          </label>
           <span id="expense-upload-status" class="card-note" style="margin:0"></span>
           <span class="card-note" style="margin:0" id="expense-receipt-count"></span>
         </div>
@@ -265,17 +264,15 @@ export function render(container, ctx) {
     let note = `${parsed.label}の明細として${parsed.transactions.length}件を読み込みました。`;
     if (parsed.unmatched.length > 0) note += `（認識できなかった行が${parsed.unmatched.length}件あります。合計金額を突き合わせて確認してください）`;
 
-    if (getMeta('gdrive_client_id')) {
-      statusEl.textContent = `${note} 元のPDFを保存中…`;
-      try {
-        const uploaded = await gdrive.uploadFile(file, { year, month, category: 'receipt', namePrefix: `${source.name}_明細` });
-        addAttachment({
-          year, month, drive_file_id: uploaded.id, name: file.name, mime_type: uploaded.mimeType,
-          web_view_link: uploaded.webViewLink, category: 'statement', source_id: source.id,
-        });
-      } catch (err) {
-        note += `（元のPDFの保存には失敗しました: ${err.message}）`;
-      }
+    statusEl.textContent = `${note} 元のPDFを保存中…`;
+    try {
+      const uploaded = await localfiles.uploadFile(file, { namePrefix: `${source.name}_明細` });
+      addAttachment({
+        year, month, drive_file_id: uploaded.id, name: file.name, mime_type: uploaded.mimeType,
+        web_view_link: localfiles.previewUrl(uploaded.id), category: 'statement', source_id: source.id,
+      });
+    } catch (err) {
+      note += `（元のPDFの保存には失敗しました: ${err.message}）`;
     }
 
     statusEl.textContent = note;
@@ -288,10 +285,7 @@ export function render(container, ctx) {
     const txns = listStatementTransactions(source.id, year, month);
     const monthAttachments = listAttachments(year, month);
     const receiptsFor = (txnId) => monthAttachments.filter((a) => a.statement_transaction_id === txnId);
-    const gdriveConfigured2 = !!getMeta('gdrive_client_id');
-    // Drive未連携なら領収書列そのものを出さない（未連携の案内はヘッダの通知で1回だけ伝えている）。
-    // ただし過去に上げた領収書が残っている月では、見えなくならないように列を残す。
-    const showReceiptColumn = gdriveConfigured2 || txns.some((t) => receiptsFor(t.id).length > 0);
+    const showReceiptColumn = true;
 
     if (txns.length === 0) {
       slot.innerHTML = `<div class="card-note" style="margin:0">${monthLabel(year, month)}分の明細はまだありません。</div>`;
@@ -320,10 +314,10 @@ export function render(container, ctx) {
                 </td>
                 ${showReceiptColumn ? `<td class="no-print receipt-cell" data-txn-id="${t.id}" style="max-width:200px">
                   <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-                    ${gdriveConfigured2 ? `<label class="btn ghost" style="cursor:pointer;font-size:11px;padding:4px 8px;white-space:nowrap;display:inline-block">
+                    <label class="btn ghost" style="cursor:pointer;font-size:11px;padding:4px 8px;white-space:nowrap;display:inline-block">
                       ＋領収書
                       <input type="file" class="txn-receipt-input" data-txn-id="${t.id}" style="display:none">
-                    </label>` : ''}
+                    </label>
                     ${receiptsFor(t.id).map((it) => `
                       <span style="display:inline-flex;align-items:center;gap:2px">
                         ${fileChipHtml({ name: it.name, webViewLink: it.web_view_link })}
@@ -376,10 +370,10 @@ export function render(container, ctx) {
         const statusEl = slot.querySelector(`.txn-receipt-status[data-txn-id="${txnId}"]`);
         statusEl.textContent = 'アップロード中…';
         try {
-          const uploaded = await gdrive.uploadFile(file, { year, month, category: 'receipt', namePrefix: source.name });
+          const uploaded = await localfiles.uploadFile(file, { namePrefix: source.name });
           addAttachment({
             year, month, drive_file_id: uploaded.id, name: file.name, mime_type: uploaded.mimeType,
-            web_view_link: uploaded.webViewLink, category: 'receipt', statement_transaction_id: txnId,
+            web_view_link: localfiles.previewUrl(uploaded.id), category: 'receipt', statement_transaction_id: txnId,
           });
           renderTransactionTable(source);
         } catch (err) {
@@ -390,17 +384,13 @@ export function render(container, ctx) {
 
     slot.querySelectorAll('.delete-txn-receipt-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        if (!confirm('この領収書を削除します。よろしいですか？（Googleドライブ上のファイルも削除されます）')) return;
+        if (!confirm('この領収書を削除します。よろしいですか？')) return;
         btn.disabled = true;
-        try {
-          if (gdrive.isConnected()) await gdrive.deleteFile(btn.dataset.driveId);
-          removeAttachment(Number(btn.dataset.id));
-          renderTransactionTable(source);
-        } catch (err) {
-          const statusEl = btn.closest('.receipt-cell').querySelector('.txn-receipt-status');
-          statusEl.textContent = `削除できませんでした: ${err.message}`;
-          btn.disabled = false;
-        }
+        let fileError = null;
+        try { await localfiles.deleteFile(btn.dataset.driveId); } catch (err) { fileError = err; }
+        removeAttachment(Number(btn.dataset.id));
+        renderTransactionTable(source);
+        if (fileError) alert(`Kayley側の記録からは削除しましたが、ファイルの削除に失敗しました: ${fileError.message}`);
       });
     });
   }
@@ -430,16 +420,13 @@ export function render(container, ctx) {
     `;
     listEl.querySelectorAll('.delete-expense-receipt-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        if (!confirm('この領収書を削除します。よろしいですか？（Googleドライブ上のファイルも削除されます）')) return;
+        if (!confirm('この領収書を削除します。よろしいですか？')) return;
         btn.disabled = true;
-        // Driveの削除が失敗しても、Kayley側の記録は消せないと永久に詰むので分けて処理する。
-        let driveError = null;
-        if (gdrive.isConnected()) {
-          try { await gdrive.deleteFile(btn.dataset.driveId); } catch (err) { driveError = err; }
-        }
+        let fileError = null;
+        try { await localfiles.deleteFile(btn.dataset.driveId); } catch (err) { fileError = err; }
         removeAttachment(Number(btn.dataset.id));
         renderGeneralReceiptList();
-        if (driveError) alert(`Kayley側の記録からは削除しましたが、Googleドライブ上のファイルは削除できませんでした: ${driveError.message}\nDrive側は手動で削除してください。`);
+        if (fileError) alert(`Kayley側の記録からは削除しましたが、ファイルの削除に失敗しました: ${fileError.message}`);
       });
     });
   }
@@ -453,13 +440,13 @@ export function render(container, ctx) {
       for (const file of files) {
         statusEl.textContent = `アップロード中… ${file.name}`;
         try {
-          const uploaded = await gdrive.uploadFile(file, { year, month, category: 'receipt' });
+          const uploaded = await localfiles.uploadFile(file);
           addAttachment({
             year, month,
             drive_file_id: uploaded.id,
             name: file.name,
             mime_type: uploaded.mimeType,
-            web_view_link: uploaded.webViewLink,
+            web_view_link: localfiles.previewUrl(uploaded.id),
             category: 'receipt',
           });
         } catch (err) {
