@@ -644,24 +644,22 @@ span.file-chip { cursor: default; }
 }
 .toolbar .spacer { flex: 1; }
 
-.period-range-label {
-  color: var(--ink-muted);
-  font-size: 13px;
-  white-space: nowrap;
+.bank-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
-.btn.ghost.search-toggle-btn {
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 50%;
-  line-height: 1;
-  text-decoration: none;
+.category-filter-group {
+  flex-basis: 100%;
 }
 
-.btn.ghost.search-toggle-btn.active {
+.btn.ghost.bank-filter-btn.active {
   color: var(--hanko);
   background: var(--hanko-wash);
+  border-color: var(--hanko);
+  text-decoration: none;
 }
 
 .transaction-search-input {

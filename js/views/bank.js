@@ -5,34 +5,28 @@ import {
   listBankAccounts, upsertBankAccount, archiveBankAccount, importBankTransactions,
   listBankTransactions, listBankTransactionLinks, linkBankTransaction, unlinkBankTransaction,
   officerWithholdingPeriodFor, derivePeriodForKind, IRREGULAR_CATEGORIES, listClients, listOfficers, listPaymentSources,
-  accountMatchKey, updateBankTransactionDescription, getMeta,
+  accountMatchKey, updateBankTransactionDescription, getMeta, getFoundingDate,
 } from '../db.js';
 import { escapeHtml, yen, fiscalYearStartOf, fiscalYearMonths } from '../format.js';
 import { decodeCsvBytes, parseCsvText, mapCsvRow, assignOccurrenceIndex, verifyRunningBalance, splitHeaderAndRows } from '../bankcsv.js';
 import { parseCurrencyInput, enableCurrencyInput } from '../currencyinput.js';
 
 let openAccountId = null;
-let transactionFilter = 'all'; // 'all' | 'unlinked' | 'linked'
-let periodFilter = 'month'; // 'month' | 'fy' | 'range' | 'all'
+let transactionFilter = 'all'; // 'all' | 'unlinked' | 'linked' | a category label
 let rangeFrom = '';
 let rangeTo = '';
 let searchText = '';
-let searchExpanded = false;
-let specificCategoryFilter = '';
 let lastCtxKey = null;
 
 export function render(container, ctx) {
+  const fyStartMonth = Number(getMeta('fiscal_year_start_month') || 4);
   const ctxKey = `${ctx.year}-${ctx.month}`;
   if (ctxKey !== lastCtxKey) {
-    periodFilter = 'month';
-    rangeFrom = '';
-    rangeTo = '';
+    ({ from: rangeFrom, to: rangeTo } = monthRange());
     searchText = '';
-    searchExpanded = false;
     lastCtxKey = ctxKey;
   }
   const accounts = listBankAccounts({ includeArchived: true });
-  const fyStartMonth = Number(getMeta('fiscal_year_start_month') || 4);
 
   container.innerHTML = `
     <div class="card">
@@ -78,25 +72,35 @@ export function render(container, ctx) {
     });
   });
 
-  function periodRange() {
-    if (periodFilter === 'month') {
-      const mm = String(ctx.month).padStart(2, '0');
-      return { from: `${ctx.year}-${mm}-01`, to: `${ctx.year}-${mm}-31` };
-    }
-    if (periodFilter === 'fy') {
-      const fyStart = fiscalYearStartOf(ctx.year, ctx.month, fyStartMonth);
-      const months = fiscalYearMonths(fyStart, fyStartMonth);
-      const first = months[0];
-      const last = months[11];
-      return {
-        from: `${first.year}-${String(first.month).padStart(2, '0')}-01`,
-        to: `${last.year}-${String(last.month).padStart(2, '0')}-31`,
-      };
-    }
-    if (periodFilter === 'range') {
-      return { from: rangeFrom || null, to: rangeTo || null };
-    }
-    return { from: null, to: null };
+  function formatDate(year, month, day) {
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+
+  function monthRange() {
+    return {
+      from: formatDate(ctx.year, ctx.month, 1),
+      to: formatDate(ctx.year, ctx.month, new Date(ctx.year, ctx.month, 0).getDate()),
+    };
+  }
+
+  function fiscalYearRange() {
+    const fyStart = fiscalYearStartOf(ctx.year, ctx.month, fyStartMonth);
+    const months = fiscalYearMonths(fyStart, fyStartMonth);
+    const first = months[0];
+    const last = months[11];
+    return {
+      from: formatDate(first.year, first.month, 1),
+      to: formatDate(last.year, last.month, new Date(last.year, last.month, 0).getDate()),
+    };
+  }
+
+  function fullRange() {
+    const founding = getFoundingDate();
+    const today = new Date();
+    return {
+      from: founding ? formatDate(founding.year, founding.month, 1) : '',
+      to: formatDate(today.getFullYear(), today.getMonth() + 1, today.getDate()),
+    };
   }
 
   function renderAccountList() {
@@ -238,7 +242,8 @@ export function render(container, ctx) {
     const slot = container.querySelector('#transaction-list-slot');
     const all = listBankTransactions(accountId);
     const linksByTxn = new Map(all.map((t) => [t.id, listBankTransactionLinks(t.id)]));
-    const { from, to } = periodRange();
+    const from = rangeFrom || null;
+    const to = rangeTo || null;
     const clients = listClients({ includeArchived: true });
     const officers = listOfficers({ includeArchived: true });
     const searchKeys = searchText.trim().split(/\s+/).filter(Boolean).map(accountMatchKey).filter(Boolean);
@@ -258,53 +263,40 @@ export function render(container, ctx) {
       const links = linksByTxn.get(t.id);
       return links.length > 0 ? [kindLabel(links[0], clients, officers)] : [];
     }))].sort((a, b) => a.localeCompare(b, 'ja'));
-    if (!categoryOptions.includes(specificCategoryFilter)) specificCategoryFilter = '';
+    const basicFilters = ['all', 'unlinked', 'linked'];
+    if (!basicFilters.includes(transactionFilter) && !categoryOptions.includes(transactionFilter)) transactionFilter = 'all';
     const rows = candidates.filter((t) => {
       const links = linksByTxn.get(t.id);
       if (transactionFilter === 'unlinked') return links.length === 0;
       if (transactionFilter === 'linked') return links.length !== 0;
-      if (transactionFilter === 'specific') {
-        if (links.length === 0) return false;
-        return !specificCategoryFilter || kindLabel(links[0], clients, officers) === specificCategoryFilter;
-      }
-      return true;
+      if (transactionFilter === 'all') return true;
+      return links.length > 0 && kindLabel(links[0], clients, officers) === transactionFilter;
     });
-    const periodLabel = from || to
-      ? `${from ? from.replaceAll('-', '/') : '指定なし'}〜${to ? to.replaceAll('-', '/') : '指定なし'}`
-      : 'すべての期間';
+    const presets = [
+      { key: 'month', label: '選択月', range: monthRange() },
+      { key: 'fy', label: '選択期', range: fiscalYearRange() },
+      { key: 'all', label: '全期間', range: fullRange() },
+    ];
+    const isActiveRange = (range) => rangeFrom === range.from && rangeTo === range.to;
 
     slot.innerHTML = `
       <div class="card">
         <div class="card-header">
           <h2>明細</h2>
           <div class="toolbar">
-            <select id="period-filter">
-              <option value="month" ${periodFilter === 'month' ? 'selected' : ''}>選択中の月</option>
-              <option value="fy" ${periodFilter === 'fy' ? 'selected' : ''}>選択中の期</option>
-              <option value="range" ${periodFilter === 'range' ? 'selected' : ''}>期間を指定</option>
-              <option value="all" ${periodFilter === 'all' ? 'selected' : ''}>すべての期間</option>
-            </select>
-            ${periodFilter === 'range' ? `
-              <input type="date" id="range-from" value="${rangeFrom}">
+            <div class="bank-filter-group period-filter-group">
+              <input type="date" id="range-from" aria-label="明細の開始日" value="${rangeFrom}">
               <span>〜</span>
-              <input type="date" id="range-to" value="${rangeTo}">
-            ` : ''}
-            <span class="period-range-label">${periodLabel}</span>
-            <button class="btn ghost search-toggle-btn ${searchText ? 'active' : ''}" id="search-toggle-btn" type="button" aria-label="明細を検索" aria-expanded="${searchExpanded}">🔍</button>
-            ${searchExpanded ? `<input type="text" id="desc-search" class="transaction-search-input" placeholder="検索（摘要・金額・日付・分類）" value="${escapeHtml(searchText)}">` : ''}
-            <select id="txn-filter">
-              <option value="all" ${transactionFilter === 'all' ? 'selected' : ''}>全分類</option>
-              <option value="unlinked" ${transactionFilter === 'unlinked' ? 'selected' : ''}>未分類</option>
-              <option value="linked" ${transactionFilter === 'linked' ? 'selected' : ''}>分類済み</option>
-              <option value="specific" ${transactionFilter === 'specific' ? 'selected' : ''}>分類を指定</option>
-            </select>
-            ${transactionFilter === 'specific' ? `
-              <select id="txn-filter-category">
-                ${categoryOptions.length === 0
-                  ? '<option value="" disabled selected>（分類済みの明細がありません）</option>'
-                  : `<option value="" ${specificCategoryFilter ? '' : 'selected'}>分類を選択</option>${categoryOptions.map((category) => `<option value="${escapeHtml(category)}" ${specificCategoryFilter === category ? 'selected' : ''}>${escapeHtml(category)}</option>`).join('')}`}
-              </select>
-            ` : ''}
+              <input type="date" id="range-to" aria-label="明細の終了日" value="${rangeTo}">
+              ${presets.map(({ key, label, range }) => `<button class="btn ghost bank-filter-btn ${isActiveRange(range) ? 'active' : ''}" type="button" data-period-preset="${key}">${label}</button>`).join('')}
+            </div>
+            <input type="text" id="desc-search" class="transaction-search-input" placeholder="検索（摘要・金額・日付・分類）" value="${escapeHtml(searchText)}">
+            <div class="bank-filter-group category-filter-group">
+              ${[
+                ['all', '全分類'], ['unlinked', '未分類'], ['linked', '分類済み'],
+                ...categoryOptions.map((category) => [category, category]),
+              ].map(([value, label]) => `<button class="btn ghost bank-filter-btn ${transactionFilter === value ? 'active' : ''}" type="button" data-txn-filter="${escapeHtml(value)}">${escapeHtml(label)}</button>`).join('')}
+            </div>
           </div>
         </div>
         ${rows.length === 0 ? '<div class="card-note" style="margin:0">明細がありません。</div>' : `
@@ -329,39 +321,30 @@ export function render(container, ctx) {
       </div>
     `;
 
-    slot.querySelector('#period-filter').addEventListener('change', (e) => {
-      periodFilter = e.target.value;
-      renderTransactionList(accountId);
+    slot.querySelectorAll('[data-period-preset]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const preset = presets.find(({ key }) => key === btn.dataset.periodPreset);
+        ({ from: rangeFrom, to: rangeTo } = preset.range);
+        renderTransactionList(accountId);
+      });
     });
     const fromInput = slot.querySelector('#range-from');
-    if (fromInput) fromInput.addEventListener('change', (e) => { rangeFrom = e.target.value; renderTransactionList(accountId); });
+    fromInput.addEventListener('change', (e) => { rangeFrom = e.target.value; renderTransactionList(accountId); });
     const toInput = slot.querySelector('#range-to');
-    if (toInput) toInput.addEventListener('change', (e) => { rangeTo = e.target.value; renderTransactionList(accountId); });
-    slot.querySelector('#search-toggle-btn').addEventListener('click', () => {
-      searchExpanded = !searchExpanded;
-      renderTransactionList(accountId);
-    });
+    toInput.addEventListener('change', (e) => { rangeTo = e.target.value; renderTransactionList(accountId); });
     const searchInput = slot.querySelector('#desc-search');
-    if (searchInput) {
-      searchInput.focus();
-      searchInput.setSelectionRange(searchInput.value.length, searchInput.value.length);
-      searchInput.addEventListener('input', (e) => {
-        searchText = e.target.value;
-        const cursorPos = e.target.selectionStart;
-        renderTransactionList(accountId);
-        const newInput = container.querySelector('#desc-search');
-        if (newInput) { newInput.focus(); newInput.setSelectionRange(cursorPos, cursorPos); }
-      });
-    }
-    slot.querySelector('#txn-filter').addEventListener('change', (e) => {
-      transactionFilter = e.target.value;
-      if (transactionFilter !== 'specific') specificCategoryFilter = '';
+    searchInput.addEventListener('input', (e) => {
+      searchText = e.target.value;
+      const cursorPos = e.target.selectionStart;
       renderTransactionList(accountId);
+      const newInput = container.querySelector('#desc-search');
+      if (newInput) { newInput.focus(); newInput.setSelectionRange(cursorPos, cursorPos); }
     });
-    const categoryInput = slot.querySelector('#txn-filter-category');
-    if (categoryInput) categoryInput.addEventListener('change', (e) => {
-      specificCategoryFilter = e.target.value;
-      renderTransactionList(accountId);
+    slot.querySelectorAll('[data-txn-filter]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        transactionFilter = btn.dataset.txnFilter;
+        renderTransactionList(accountId);
+      });
     });
 
     slot.querySelectorAll('.desc-edit-input').forEach((input) => {
