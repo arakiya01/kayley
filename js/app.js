@@ -1,5 +1,5 @@
 import {
-  openDatabase, getMeta, getFoundingDate, getSectionCompletion, isMonthAllowed, onDataChange,
+  openDatabase, getMeta, getFoundingDate, getSectionCompletion, isMonthAllowed, onDataChange, flushPersist,
 } from './db.js';
 import { todayYearMonth, escapeHtml, monthLabel, addMonths } from './format.js';
 import { applyTheme } from './theme.js';
@@ -204,6 +204,10 @@ function renderView() {
 }
 
 window.addEventListener('hashchange', renderView);
+
+// Electronのメインプロセスが、ウィンドウを閉じる直前にexecuteJavaScript経由で呼ぶ。
+// デバウンス中のDB保存を確実に完了させてから終了させるための窓口。
+window.__kayleyFlushSave = flushPersist;
 
 async function main() {
   await openDatabase();

@@ -350,6 +350,17 @@ function schedulePersist() {
   saveTimer = setTimeout(() => { persist(); }, 250);
 }
 
+// アプリを閉じる直前に、Electronのメインプロセスからexecuted JavaScript経由で
+// 呼ばれる（electron/main.jsのwindow closeハンドラを参照）。デバウンス中の
+// 保存が反映されないまま終了してデータが消えるのを防ぐための強制フラッシュ。
+export async function flushPersist() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  await persist();
+}
+
 // データが変わったことを画面側へ知らせる仕組み。
 // 完了印・締め残りの件数・通知はどの画面からの入力でも変わりうるが、
 // これまでは画面遷移するまで更新されなかったため、書き込みのたびに通知する。

@@ -130,6 +130,24 @@ async function createWindow() {
 
   mainWindow.loadURL(`http://127.0.0.1:${port}/index.html`);
 
+  // デバウンス中のDB保存（js/db.jsのschedulePersist、最大250ms）が反映されないまま
+  // ウィンドウが閉じてデータが失われるのを防ぐため、実際に閉じる前に強制的に保存を
+  // 完了させる。閉じるボタン・Cmd+Q・メニューの「終了」のいずれもこのcloseイベントを
+  // 経由する。
+  let closeConfirmed = false;
+  mainWindow.on('close', (event) => {
+    if (closeConfirmed) return;
+    event.preventDefault();
+    const flush = mainWindow.webContents.executeJavaScript(
+      'window.__kayleyFlushSave ? window.__kayleyFlushSave() : Promise.resolve()'
+    ).catch(() => {});
+    const timeout = new Promise((resolve) => setTimeout(resolve, 3000));
+    Promise.race([flush, timeout]).then(() => {
+      closeConfirmed = true;
+      if (mainWindow) mainWindow.close();
+    });
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
     server.close();
