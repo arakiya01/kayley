@@ -40,6 +40,8 @@ function saveUiState(state) {
 }
 
 let state = loadUiState();
+let updateInfo = null;
+let updateStatus = null; // null | 'downloading' | エラーメッセージ文字列
 
 function currentTabFromHash() {
   const hash = location.hash.replace('#/', '');
@@ -122,6 +124,20 @@ function renderNotices() {
       </div>
     `);
   }
+  if (updateInfo && updateInfo.available) {
+    const label = updateStatus === 'downloading'
+      ? 'ダウンロード中…（完了するとKayleyが自動的に再起動します）'
+      : updateStatus
+        ? updateStatus
+        : `新しいバージョン（v${updateInfo.latestVersion}）があります`;
+    notices.push(`
+      <div class="notice-row info">
+        <span class="notice-dot"></span>
+        <span class="notice-text">${escapeHtml(label)}</span>
+        ${updateStatus === 'downloading' ? '' : '<button class="notice-action" id="notice-apply-update">更新する</button>'}
+      </div>
+    `);
+  }
   const slot = document.getElementById('notice-slot');
   slot.innerHTML = notices.join('');
   const openMonthButton = slot.querySelector('#notice-open-month');
@@ -131,6 +147,20 @@ function renderNotices() {
       state.month = unclosedMonth.month;
       saveUiState(state);
       renderView();
+    });
+  }
+  const applyUpdateButton = slot.querySelector('#notice-apply-update');
+  if (applyUpdateButton) {
+    applyUpdateButton.addEventListener('click', async () => {
+      if (!confirm('新しいバージョンをダウンロードして更新します。Kayleyが一度終了し、自動的に再起動します。よろしいですか？')) return;
+      updateStatus = 'downloading';
+      renderNotices();
+      try {
+        await window.kayleyBridge.applyUpdate(updateInfo.assetUrl);
+      } catch (err) {
+        updateStatus = `更新に失敗しました: ${err.message}`;
+        renderNotices();
+      }
     });
   }
 }
@@ -188,6 +218,14 @@ async function main() {
     if (document.getElementById('spine-top-slot')) renderProgressSpine();
   });
 
+  if (window.kayleyBridge?.checkForUpdate) {
+    window.kayleyBridge.checkForUpdate().then((result) => {
+      if (result && result.available) {
+        updateInfo = result;
+        if (document.getElementById('spine-top-slot')) renderProgressSpine();
+      }
+    }).catch(() => { /* オフライン等は無視。次回起動時に再チェックされる */ });
+  }
 }
 
 main();
