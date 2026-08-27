@@ -10,7 +10,10 @@
 
 ブラウザやコマンドラインを意識せず使えるよう、Mac / Windows それぞれのアプリとしても配布できます（Electronでラップし、中でこのフォルダをローカルサーバーとして起動するだけで、アプリ自体の中身・データ保存先はブラウザ版と同じです）。
 
-- **Mac**: `dist/Kayley-1.0.0-arm64-mac.zip`（Apple Silicon）または `dist/Kayley-1.0.0-mac.zip`（Intel）を解凍し、`Kayley.app` を「アプリケーション」フォルダへドラッグ。初回起動時は未署名アプリのため「開発元が未確認」の警告が出るので、Finderで**右クリック→「開く」**を選んでください（2回目以降は通常のダブルクリックで起動できます）。
+- **Mac**: `dist/Kayley-1.0.0-arm64-mac.zip`（Apple Silicon）または `dist/Kayley-1.0.0-mac.zip`（Intel）を解凍し、`Kayley.app` を「アプリケーション」フォルダへドラッグ。未署名アプリのため、特にApple Siliconでは「"Kayley.app" is damaged and can't be opened」という（実際には壊れていない）誤解を招く警告が出ることがあります。その場合はターミナルで以下を実行してから開いてください（Finderの右クリック→「開く」だけでは足りない場合があります）。
+  ```bash
+  xattr -cr /Applications/Kayley.app
+  ```
 - **Windows**: `dist/Kayley-1.0.0-win-x64-portable.zip` を解凍し、フォルダ内の `Kayley.exe` を実行してください。未署名のため SmartScreen の警告が出る場合は「詳細情報」→「実行」を選びます。デスクトップ・スタートメニューへのショートカット付きの通常のインストーラー（`.exe` セットアップ）は、実際の Windows か GitHub Actions 等のx64環境でしか生成できない都合上、現状はこの「解凍して実行」形式のみです。
 
 ビルドし直す場合（要 Node.js）:
