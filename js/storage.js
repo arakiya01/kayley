@@ -13,6 +13,10 @@ function supportsOPFS() {
     && typeof navigator.storage.getDirectory === 'function';
 }
 
+function hasElectronBridge() {
+  return typeof window !== 'undefined' && !!window.kayleyBridge;
+}
+
 async function opfsSave(bytes) {
   const root = await navigator.storage.getDirectory();
   const handle = await root.getFileHandle(DB_FILENAME, { create: true });
@@ -68,10 +72,12 @@ async function idbLoad() {
 }
 
 export const Storage = {
-  backend: supportsOPFS() ? 'opfs' : 'indexeddb',
+  backend: hasElectronBridge() ? 'electron' : (supportsOPFS() ? 'opfs' : 'indexeddb'),
 
   async save(bytes) {
-    if (this.backend === 'opfs') {
+    if (this.backend === 'electron') {
+      await window.kayleyBridge.saveDb(bytes);
+    } else if (this.backend === 'opfs') {
       await opfsSave(bytes);
     } else {
       await idbSave(bytes);
@@ -79,6 +85,9 @@ export const Storage = {
   },
 
   async load() {
+    if (this.backend === 'electron') {
+      return await window.kayleyBridge.loadDb();
+    }
     if (this.backend === 'opfs') {
       return await opfsLoad();
     }
