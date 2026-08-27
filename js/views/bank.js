@@ -303,11 +303,12 @@ export function render(container, ctx) {
               ${[
                 ['all', '全件'], ['unlinked', '未分類'], ['linked', '分類済'],
               ].map(([value, label]) => `<button class="btn ghost bank-filter-btn ${transactionFilter === value ? 'active' : ''}" type="button" data-txn-filter="${escapeHtml(value)}">${escapeHtml(label)}</button>`).join('')}
-              ${transactionFilter === 'linked' && categoryOptions.length > 0 ? `
-                <select id="txn-filter-category" multiple size="${Math.max(2, Math.min(6, categoryOptions.length))}" aria-label="分類を絞り込む">
-                  ${categoryOptions.map((category) => `<option value="${escapeHtml(category)}" ${selectedCategories.has(category) ? 'selected' : ''}>${escapeHtml(category)}</option>`).join('')}
-                </select>
-              ` : ''}
+              ${transactionFilter === 'linked' ? categoryOptions.map((category) => `
+                <label class="category-checkbox-item">
+                  <input type="checkbox" class="category-checkbox" value="${escapeHtml(category)}" ${selectedCategories.has(category) ? 'checked' : ''}>
+                  <span>${escapeHtml(category)}</span>
+                </label>
+              `).join('') : ''}
             </div>
           </div>
         </div>
@@ -358,13 +359,12 @@ export function render(container, ctx) {
         renderTransactionList(accountId);
       });
     });
-    const categorySelect = slot.querySelector('#txn-filter-category');
-    if (categorySelect) {
-      categorySelect.addEventListener('change', () => {
-        selectedCategories = new Set(Array.from(categorySelect.selectedOptions).map((option) => option.value));
+    slot.querySelectorAll('.category-checkbox').forEach((cb) => {
+      cb.addEventListener('change', () => {
+        selectedCategories = new Set(Array.from(slot.querySelectorAll('.category-checkbox:checked')).map((el) => el.value));
         renderTransactionList(accountId);
       });
-    }
+    });
 
     slot.querySelectorAll('.desc-edit-input').forEach((input) => {
       input.addEventListener('change', () => {
