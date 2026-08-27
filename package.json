@@ -7,7 +7,7 @@
   "scripts": {
     "start": "electron .",
     "dist:mac": "electron-builder --mac dir --x64 --arm64 --publish=never && node scripts/package-mac-zips.mjs",
-    "dist:win": "electron-builder --win --publish=never",
+    "dist:win": "electron-builder --win dir --x64 --publish=never && node scripts/package-win-zip.mjs",
     "dist:all": "npm run dist:mac && npm run dist:win"
   },
   "devDependencies": {
@@ -38,15 +38,9 @@
       "icon": "build/icon.icns"
     },
     "win": {
-      "target": ["nsis"],
+      "target": ["dir"],
       "icon": "build/icon.ico",
       "signAndEditExecutable": false
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
     }
   }
 }
