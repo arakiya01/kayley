@@ -109,11 +109,16 @@ async function applyUpdate(assetUrl) {
 
   const oldAppPath = currentAppDir();
   const backupPath = `${oldAppPath}.backup`;
+  const pid = process.pid;
 
   if (process.platform === 'darwin') {
     const scriptPath = path.join(workDir, 'apply.sh');
+    // 固定秒数のsleepだと、終了直前の保存処理（最大3秒）と競合して、
+    // 旧プロセスが生きたまま入れ替え・openが走り、openが新しいアプリを
+    // 起動せず旧プロセスをそのまま前面に出してしまうことがあった。
+    // 旧プロセス（PID）が実際に終了するまで待ってから入れ替える。
     const script = `#!/bin/bash
-sleep 2
+while kill -0 ${pid} 2>/dev/null; do sleep 0.3; done
 rm -rf "${backupPath}"
 mv "${oldAppPath}" "${backupPath}"
 mv "${newAppPath}" "${oldAppPath}"
@@ -125,7 +130,7 @@ rm -rf "${workDir}"
   } else {
     const scriptPath = path.join(workDir, 'apply.bat');
     const script = `@echo off
-timeout /t 2 /nobreak > NUL
+powershell -NoProfile -Command "try { Wait-Process -Id ${pid} -Timeout 15 -ErrorAction SilentlyContinue } catch {}"
 rmdir /s /q "${backupPath}" 2>NUL
 move "${oldAppPath}" "${backupPath}"
 move "${newAppPath}" "${oldAppPath}"
