@@ -304,15 +304,14 @@ export function render(container, ctx) {
       btn.addEventListener('click', async () => {
         if (!confirm('このファイルを削除します。よろしいですか？（Googleドライブ上のファイルも削除されます）')) return;
         btn.disabled = true;
-        try {
-          if (gdrive.isConnected()) await gdrive.deleteFile(btn.dataset.driveId);
-          removeAttachment(Number(btn.dataset.id));
-          renderAttachmentList();
-        } catch (err) {
-          const statusEl = btn.closest('.attachment-item').querySelector('.delete-attachment-status');
-          statusEl.textContent = `削除できませんでした: ${err.message}`;
-          btn.disabled = false;
+        // Driveの削除が失敗しても、Kayley側の記録は消せないと永久に詰むので分けて処理する。
+        let driveError = null;
+        if (gdrive.isConnected()) {
+          try { await gdrive.deleteFile(btn.dataset.driveId); } catch (err) { driveError = err; }
         }
+        removeAttachment(Number(btn.dataset.id));
+        renderAttachmentList();
+        if (driveError) alert(`Kayley側の記録からは削除しましたが、Googleドライブ上のファイルは削除できませんでした: ${driveError.message}\nDrive側は手動で削除してください。`);
       });
     });
   }
