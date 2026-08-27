@@ -285,8 +285,7 @@ export function render(container, ctx) {
       const links = linksByTxn.get(t.id);
       if (transactionFilter === 'unlinked') return links.length === 0;
       if (transactionFilter === 'linked') {
-        return links.length > 0
-          && (selectedCategories.size === 0 || selectedCategories.has(kindLabel(links[0], clients, officers)));
+        return links.length > 0 && selectedCategories.has(kindLabel(links[0], clients, officers));
       }
       if (transactionFilter === 'all') return true;
       return false;
@@ -375,7 +374,14 @@ export function render(container, ctx) {
     });
     slot.querySelectorAll('[data-txn-filter]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        transactionFilter = btn.dataset.txnFilter;
+        const nextFilter = btn.dataset.txnFilter;
+        // 分類済に切り替えた瞬間のチェック状態は、直前がどのボタンだったかで決める。
+        // 全件から来た場合は「今まで通り全部表示」を維持するため全チェック、
+        // 未分類から来た場合は「何も選んでいない」を維持するため全部チェックなしにする。
+        if (nextFilter === 'linked' && transactionFilter !== 'linked') {
+          selectedCategories = transactionFilter === 'unlinked' ? new Set() : new Set(categoryOptions);
+        }
+        transactionFilter = nextFilter;
         renderTransactionList(accountId);
       });
     });
