@@ -661,6 +661,28 @@ span.file-chip { cursor: default; }
   align-items: flex-start;
 }
 
+.category-groups {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.category-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.category-group-label {
+  min-width: 92px;
+  font-size: 11.5px;
+  color: var(--ink-muted);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 .category-checkbox-item {
   display: flex;
   align-items: center;

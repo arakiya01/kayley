@@ -263,10 +263,21 @@ export function render(container, ctx) {
       if (!searchKeys.every((key) => haystack.includes(key))) return false;
       return true;
     });
-    const categoryOptions = [...new Set(candidates.flatMap((t) => {
+    const categoryLabelToGroup = new Map();
+    candidates.forEach((t) => {
       const links = linksByTxn.get(t.id);
-      return links.length > 0 ? [kindLabel(links[0], clients, officers)] : [];
-    }))].sort((a, b) => a.localeCompare(b, 'ja'));
+      if (links.length === 0) return;
+      const label = kindLabel(links[0], clients, officers);
+      if (!categoryLabelToGroup.has(label)) categoryLabelToGroup.set(label, kindGroupLabel(links[0]));
+    });
+    const categoryOptions = [...categoryLabelToGroup.keys()].sort((a, b) => a.localeCompare(b, 'ja'));
+    const groupOrder = ['家賃', '売掛金', '役員報酬（手取り）', '役員報酬（社会保険料）', '役員報酬（源泉所得税）', '経費', '不定型'];
+    const categoryGroups = groupOrder
+      .map((group) => ({ group, items: categoryOptions.filter((label) => categoryLabelToGroup.get(label) === group) }))
+      .filter(({ items }) => items.length > 0);
+    const categoryShortLabel = (label, group) => (label === group
+      ? group
+      : label.startsWith(`${group}・`) ? label.slice(group.length + 1) : label);
     const basicFilters = ['all', 'unlinked', 'linked'];
     if (!basicFilters.includes(transactionFilter)) transactionFilter = 'all';
     selectedCategories = new Set([...selectedCategories].filter((category) => categoryOptions.includes(category)));
@@ -303,13 +314,22 @@ export function render(container, ctx) {
               ${[
                 ['all', '全件'], ['unlinked', '未分類'], ['linked', '分類済'],
               ].map(([value, label]) => `<button class="btn ghost bank-filter-btn ${transactionFilter === value ? 'active' : ''}" type="button" data-txn-filter="${escapeHtml(value)}">${escapeHtml(label)}</button>`).join('')}
-              ${transactionFilter === 'linked' ? categoryOptions.map((category) => `
-                <label class="category-checkbox-item">
-                  <input type="checkbox" class="category-checkbox" value="${escapeHtml(category)}" ${selectedCategories.has(category) ? 'checked' : ''}>
-                  <span>${escapeHtml(category)}</span>
-                </label>
-              `).join('') : ''}
             </div>
+            ${transactionFilter === 'linked' && categoryGroups.length > 0 ? `
+              <div class="category-groups">
+                ${categoryGroups.map(({ group, items }) => `
+                  <div class="category-group">
+                    <span class="category-group-label">${escapeHtml(group)}</span>
+                    ${items.map((category) => `
+                      <label class="category-checkbox-item">
+                        <input type="checkbox" class="category-checkbox" value="${escapeHtml(category)}" ${selectedCategories.has(category) ? 'checked' : ''}>
+                        <span>${escapeHtml(categoryShortLabel(category, group))}</span>
+                      </label>
+                    `).join('')}
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
           </div>
         </div>
         ${rows.length === 0 ? '<div class="card-note" style="margin:0">明細がありません。</div>' : `
@@ -389,6 +409,14 @@ export function render(container, ctx) {
         renderTransactionList(accountId);
       });
     });
+  }
+
+  function kindGroupLabel(link) {
+    return {
+      rent: '家賃', ar: '売掛金', officer_net: '役員報酬（手取り）',
+      officer_insurance: '役員報酬（社会保険料）', officer_withholding: '役員報酬（源泉所得税）',
+      expense_card: '経費',
+    }[link.kind] || '不定型';
   }
 
   function kindLabel(link, clients, officers) {
