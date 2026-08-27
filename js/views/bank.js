@@ -12,7 +12,8 @@ import { decodeCsvBytes, parseCsvText, mapCsvRow, assignOccurrenceIndex, verifyR
 import { parseCurrencyInput, enableCurrencyInput } from '../currencyinput.js';
 
 let openAccountId = null;
-let transactionFilter = 'all'; // 'all' | 'unlinked' | 'linked' | a category label
+let transactionFilter = 'all'; // 'all' | 'unlinked' | 'linked'
+let selectedCategories = new Set();
 let rangeFrom = '';
 let rangeTo = '';
 let searchText = '';
@@ -20,6 +21,11 @@ let lastCtxKey = null;
 
 export function render(container, ctx) {
   const fyStartMonth = Number(getMeta('fiscal_year_start_month') || 4);
+  function formatDate(year, month, day) {
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+  const today = new Date();
+  const todayStr = formatDate(today.getFullYear(), today.getMonth() + 1, today.getDate());
   const ctxKey = `${ctx.year}-${ctx.month}`;
   if (ctxKey !== lastCtxKey) {
     ({ from: rangeFrom, to: rangeTo } = monthRange());
@@ -41,6 +47,7 @@ export function render(container, ctx) {
     <div id="account-detail-slot"></div>
   `;
 
+  if (openAccountId == null && accounts.length > 0) openAccountId = accounts[0].id;
   renderAccountList();
   if (openAccountId != null && accounts.some((a) => a.id === openAccountId)) {
     openAccountDetail(openAccountId);
@@ -72,14 +79,11 @@ export function render(container, ctx) {
     });
   });
 
-  function formatDate(year, month, day) {
-    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  }
-
   function monthRange() {
+    const end = formatDate(ctx.year, ctx.month, new Date(ctx.year, ctx.month, 0).getDate());
     return {
       from: formatDate(ctx.year, ctx.month, 1),
-      to: formatDate(ctx.year, ctx.month, new Date(ctx.year, ctx.month, 0).getDate()),
+      to: end > todayStr ? todayStr : end,
     };
   }
 
@@ -88,18 +92,18 @@ export function render(container, ctx) {
     const months = fiscalYearMonths(fyStart, fyStartMonth);
     const first = months[0];
     const last = months[11];
+    const end = formatDate(last.year, last.month, new Date(last.year, last.month, 0).getDate());
     return {
       from: formatDate(first.year, first.month, 1),
-      to: formatDate(last.year, last.month, new Date(last.year, last.month, 0).getDate()),
+      to: end > todayStr ? todayStr : end,
     };
   }
 
   function fullRange() {
     const founding = getFoundingDate();
-    const today = new Date();
     return {
       from: founding ? formatDate(founding.year, founding.month, 1) : '',
-      to: formatDate(today.getFullYear(), today.getMonth() + 1, today.getDate()),
+      to: todayStr,
     };
   }
 
@@ -264,13 +268,17 @@ export function render(container, ctx) {
       return links.length > 0 ? [kindLabel(links[0], clients, officers)] : [];
     }))].sort((a, b) => a.localeCompare(b, 'ja'));
     const basicFilters = ['all', 'unlinked', 'linked'];
-    if (!basicFilters.includes(transactionFilter) && !categoryOptions.includes(transactionFilter)) transactionFilter = 'all';
+    if (!basicFilters.includes(transactionFilter)) transactionFilter = 'all';
+    selectedCategories = new Set([...selectedCategories].filter((category) => categoryOptions.includes(category)));
     const rows = candidates.filter((t) => {
       const links = linksByTxn.get(t.id);
       if (transactionFilter === 'unlinked') return links.length === 0;
-      if (transactionFilter === 'linked') return links.length !== 0;
+      if (transactionFilter === 'linked') {
+        return links.length > 0
+          && (selectedCategories.size === 0 || selectedCategories.has(kindLabel(links[0], clients, officers)));
+      }
       if (transactionFilter === 'all') return true;
-      return links.length > 0 && kindLabel(links[0], clients, officers) === transactionFilter;
+      return false;
     });
     const presets = [
       { key: 'month', label: '選択月', range: monthRange() },
@@ -285,17 +293,21 @@ export function render(container, ctx) {
           <h2>明細</h2>
           <div class="toolbar">
             <div class="bank-filter-group period-filter-group">
-              <input type="date" id="range-from" aria-label="明細の開始日" value="${rangeFrom}">
+              <input type="date" id="range-from" aria-label="明細の開始日" value="${rangeFrom}" max="${todayStr}">
               <span>〜</span>
-              <input type="date" id="range-to" aria-label="明細の終了日" value="${rangeTo}">
+              <input type="date" id="range-to" aria-label="明細の終了日" value="${rangeTo}" max="${todayStr}">
               ${presets.map(({ key, label, range }) => `<button class="btn ghost bank-filter-btn ${isActiveRange(range) ? 'active' : ''}" type="button" data-period-preset="${key}">${label}</button>`).join('')}
             </div>
             <input type="text" id="desc-search" class="transaction-search-input" placeholder="検索（摘要・金額・日付・分類）" value="${escapeHtml(searchText)}">
             <div class="bank-filter-group category-filter-group">
               ${[
-                ['all', '全分類'], ['unlinked', '未分類'], ['linked', '分類済み'],
-                ...categoryOptions.map((category) => [category, category]),
+                ['all', '全件'], ['unlinked', '未分類'], ['linked', '分類済'],
               ].map(([value, label]) => `<button class="btn ghost bank-filter-btn ${transactionFilter === value ? 'active' : ''}" type="button" data-txn-filter="${escapeHtml(value)}">${escapeHtml(label)}</button>`).join('')}
+              ${transactionFilter === 'linked' && categoryOptions.length > 0 ? `
+                <select id="txn-filter-category" multiple size="${Math.max(2, Math.min(6, categoryOptions.length))}" aria-label="分類を絞り込む">
+                  ${categoryOptions.map((category) => `<option value="${escapeHtml(category)}" ${selectedCategories.has(category) ? 'selected' : ''}>${escapeHtml(category)}</option>`).join('')}
+                </select>
+              ` : ''}
             </div>
           </div>
         </div>
@@ -346,6 +358,13 @@ export function render(container, ctx) {
         renderTransactionList(accountId);
       });
     });
+    const categorySelect = slot.querySelector('#txn-filter-category');
+    if (categorySelect) {
+      categorySelect.addEventListener('change', () => {
+        selectedCategories = new Set(Array.from(categorySelect.selectedOptions).map((option) => option.value));
+        renderTransactionList(accountId);
+      });
+    }
 
     slot.querySelectorAll('.desc-edit-input').forEach((input) => {
       input.addEventListener('change', () => {

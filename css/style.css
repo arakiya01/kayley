@@ -346,12 +346,13 @@ details.settings-fold[open] > summary { margin-bottom: 16px; }
 /* カードタイトルの右側にそのカードの主要操作ボタンを並べる共通レイアウト */
 .card-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 4px;
 }
-.card-header h2 { margin-bottom: 0; }
+.card-header h2 { margin-bottom: 0; flex-shrink: 0; }
 .card-header .toolbar { margin: 0; }
 
 .card .card-note {
