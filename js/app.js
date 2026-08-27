@@ -1,9 +1,8 @@
 import {
-  openDatabase, getMeta, getFoundingDate, exportBytes, getSectionCompletion, isMonthAllowed, onDataChange,
+  openDatabase, getMeta, getFoundingDate, getSectionCompletion, isMonthAllowed, onDataChange,
 } from './db.js';
 import { todayYearMonth, escapeHtml, monthLabel, addMonths } from './format.js';
 import { applyTheme } from './theme.js';
-import * as gdrive from './gdrive.js';
 import * as dashboard from './views/dashboard.js';
 import * as ar from './views/ar.js';
 import * as rent from './views/rent.js';
@@ -119,15 +118,6 @@ function renderNotices() {
       </div>
     `);
   }
-  if (!getMeta('gdrive_client_id') && state.tab !== 'settings') {
-    notices.push(`
-      <div class="notice-row info">
-        <span class="notice-dot"></span>
-        <span class="notice-text">Google Drive未連携のため、請求書・領収書を保存できません</span>
-        <a class="notice-action" href="#/settings">設定を開く</a>
-      </div>
-    `);
-  }
   const slot = document.getElementById('notice-slot');
   slot.innerHTML = notices.join('');
   const openMonthButton = slot.querySelector('#notice-open-month');
@@ -194,9 +184,6 @@ async function main() {
     if (document.getElementById('spine-top-slot')) renderProgressSpine();
   });
 
-  // すでにGoogle Driveに接続済み（同じタブ内で維持されているセッション）で、自動バックアップが
-  // オンなら、前回から12時間以上経っていた場合だけ静かにバックアップする。新規にログイン画面は開かない。
-  gdrive.maybeAutoBackup(exportBytes);
 }
 
 main();

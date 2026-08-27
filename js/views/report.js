@@ -7,7 +7,7 @@ import {
 import {
   yen, monthLabel, escapeHtml, fiscalYearStartOf, fiscalYearMonths,
 } from '../format.js';
-import * as gdrive from '../gdrive.js';
+import * as localfiles from '../localfiles.js';
 import { renderPdfInto } from '../pdfpreview.js';
 import { showMask, updateMask, hideMask } from '../uimask.js';
 import { fileChipHtml } from '../fileicon.js';
@@ -222,7 +222,7 @@ export function render(container, ctx) {
       </div>
       <div class="card-note no-print">
         請求書は売掛金タブの各得意先から、領収書は「経費」タブからアップロードできます。
-        「読み込んで表示」を押すと、Googleドライブから中身を取得してこのレポートに埋め込みます（PDF出力にもそのまま含まれます）。
+        画面を開くと自動で中身を読み込んでこのレポートに埋め込みます（PDF出力にもそのまま含まれます）。
       </div>
       <div id="attachment-list"></div>
     </div>
@@ -302,25 +302,21 @@ export function render(container, ctx) {
 
     listEl.querySelectorAll('.delete-attachment-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
-        if (!confirm('このファイルを削除します。よろしいですか？（Googleドライブ上のファイルも削除されます）')) return;
+        if (!confirm('このファイルを削除します。よろしいですか？')) return;
         btn.disabled = true;
-        // Driveの削除が失敗しても、Kayley側の記録は消せないと永久に詰むので分けて処理する。
-        let driveError = null;
-        if (gdrive.isConnected()) {
-          try { await gdrive.deleteFile(btn.dataset.driveId); } catch (err) { driveError = err; }
-        }
+        let fileError = null;
+        try { await localfiles.deleteFile(btn.dataset.driveId); } catch (err) { fileError = err; }
         removeAttachment(Number(btn.dataset.id));
         renderAttachmentList();
-        if (driveError) alert(`Kayley側の記録からは削除しましたが、Googleドライブ上のファイルは削除できませんでした: ${driveError.message}\nDrive側は手動で削除してください。`);
+        if (fileError) alert(`Kayley側の記録からは削除しましたが、ファイルの削除に失敗しました: ${fileError.message}`);
       });
     });
   }
 
   renderAttachmentList();
 
-  // 画面を開いた時点で、すでに接続済みならバックグラウンドで先読みしておく
-  // （未接続の場合は何もしない＝印刷ボタンを押すまで接続を試みない、という既存の方針を維持）。
-  if (gdrive.isConnected() && listAttachments(year, month).length > 0) {
+  // ローカル保存になり読み込みコストが無くなったので、証憑があれば常に先読みする。
+  if (listAttachments(year, month).length > 0) {
     startLoadingPreviews();
   }
 
@@ -343,7 +339,7 @@ export function render(container, ctx) {
       done += 1;
       reportProgress(`読み込み中…（${done}/${slots.length}）`);
       try {
-        const blob = await gdrive.downloadFile(slot.dataset.driveId);
+        const blob = await localfiles.downloadFile(slot.dataset.driveId);
         const mime = slot.dataset.mime;
         if (mime.startsWith('image/')) {
           const url = URL.createObjectURL(blob);
