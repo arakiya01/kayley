@@ -98,6 +98,11 @@ ipcMain.handle('update:check', async () => {
   return checkForUpdate(app.getVersion());
 });
 
+ipcMain.handle('update:apply', async (event, assetUrl) => {
+  const { applyUpdate } = require('./updater');
+  return applyUpdate(assetUrl);
+});
+
 async function createWindow() {
   const server = await startServer(ATTACHMENTS_DIR);
   const { port } = server.address();
@@ -132,6 +137,8 @@ async function createWindow() {
 }
 
 app.whenReady().then(() => {
+  const { cleanupBackupIfPresent } = require('./updater');
+  cleanupBackupIfPresent();
   buildMenu();
   createWindow();
 

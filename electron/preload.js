@@ -8,4 +8,5 @@ contextBridge.exposeInMainWorld('kayleyBridge', {
   saveAttachment: (fileName, bytes) => ipcRenderer.invoke('attachment:save', fileName, bytes),
   deleteAttachment: (fileId) => ipcRenderer.invoke('attachment:delete', fileId),
   checkForUpdate: () => ipcRenderer.invoke('update:check'),
+  applyUpdate: (assetUrl) => ipcRenderer.invoke('update:apply', assetUrl),
 });
