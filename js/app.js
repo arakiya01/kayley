@@ -76,11 +76,7 @@ function renderProgressSpine() {
     <div class="spine-top">
       <div class="wordmark-link">
         <a href="#/dashboard" class="brand-mark">
-          <svg class="brand-logo" width="30" height="30" viewBox="0 0 100 100" aria-hidden="true">
-            <circle cx="50" cy="50" r="45" fill="#F7F1E3" stroke="#1B7A3D" stroke-width="8"/>
-            <text x="50" y="70" text-anchor="middle" font-family="'Zen Kaku Gothic New', sans-serif" font-weight="700" font-size="56" fill="#1B7A3D">K</text>
-          </svg>
-          <span class="display">Kayley</span>
+          <img class="brand-logo" src="assets/kayley-logo.png" alt="Kayley">
         </a>
         ${appVersion ? `<span class="version-badge">v${escapeHtml(appVersion)}</span>` : ''}
         ${companyName ? `<small>${escapeHtml(companyName)}</small>` : '<small><a href="#/settings">会社名を設定する</a></small>'}
