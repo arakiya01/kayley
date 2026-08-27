@@ -1,4 +1,6 @@
-const { app, BrowserWindow, Menu, shell } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
+const path = require('path');
+const fs = require('fs/promises');
 const { startServer } = require('./server');
 
 let mainWindow = null;
@@ -57,8 +59,41 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+const DATA_DIR = app.getPath('userData');
+const DB_PATH = path.join(DATA_DIR, 'kayley.sqlite');
+const ATTACHMENTS_DIR = path.join(DATA_DIR, 'attachments');
+
+ipcMain.handle('db:save', async (event, bytes) => {
+  await fs.writeFile(DB_PATH, Buffer.from(bytes));
+});
+
+ipcMain.handle('db:load', async () => {
+  try {
+    const buf = await fs.readFile(DB_PATH);
+    return new Uint8Array(buf);
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle('attachment:save', async (event, fileName, bytes) => {
+  await fs.mkdir(ATTACHMENTS_DIR, { recursive: true });
+  const safeName = String(fileName).replace(/[/\\]/g, '_');
+  const fileId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
+  await fs.writeFile(path.join(ATTACHMENTS_DIR, fileId), Buffer.from(bytes));
+  return fileId;
+});
+
+ipcMain.handle('attachment:delete', async (event, fileId) => {
+  try {
+    await fs.unlink(path.join(ATTACHMENTS_DIR, String(fileId)));
+  } catch {
+    // 既に無い場合は成功扱い（削除したい状態と一致しているため）
+  }
+});
+
 async function createWindow() {
-  const server = await startServer();
+  const server = await startServer(ATTACHMENTS_DIR);
   const { port } = server.address();
 
   mainWindow = new BrowserWindow({
@@ -72,6 +107,7 @@ async function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       devTools: true,
+      preload: path.join(__dirname, 'preload.js'),
     },
   });
 
