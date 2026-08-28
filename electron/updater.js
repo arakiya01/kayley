@@ -146,7 +146,13 @@ rmdir /s /q "${workDir}"
     spawn('cmd.exe', ['/c', scriptPath], { detached: true, stdio: 'ignore' }).unref();
   }
 
-  app.quit();
+  // app.quit()は各ウィンドウのcloseイベント（electron/main.jsのflush処理）を
+  // 経由するが、そこでpreventDefault()した後に手動でclose()し直す実装と
+  // 相性が悪く、macOSではウィンドウが閉じてもアプリ自体は終了しないままに
+  // なることがあった（入れ替えスクリプトのPID待ちが完了せず、自動起動しない
+  // 不具合の原因）。保存はここに来る前（呼び出し元のrenderer側）で確定済みなので、
+  // close系のイベントを一切経由しない強制終了で確実にプロセスを終了させる。
+  app.exit();
 }
 
 function cleanupBackupIfPresent() {

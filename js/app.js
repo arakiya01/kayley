@@ -156,6 +156,10 @@ function renderNotices() {
       updateStatus = 'downloading';
       renderNotices();
       try {
+        // applyUpdate側は強制終了（app.exit）で終わるため、
+        // ウィンドウを閉じる際のflush（electron/main.jsのcloseハンドラ）を
+        // 経由しない。ここで先に保存を確定させておく。
+        await flushPersist();
         await window.kayleyBridge.applyUpdate(updateInfo.assetUrl);
       } catch (err) {
         updateStatus = `更新に失敗しました: ${err.message}`;
