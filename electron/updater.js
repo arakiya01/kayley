@@ -117,12 +117,17 @@ async function applyUpdate(assetUrl) {
     // 旧プロセスが生きたまま入れ替え・openが走り、openが新しいアプリを
     // 起動せず旧プロセスをそのまま前面に出してしまうことがあった。
     // 旧プロセス（PID）が実際に終了するまで待ってから入れ替える。
+    // 終了直後もヘルパープロセス（GPU/レンダラー等）の後片付けに一瞬かかることが
+    // あるため、念のため1秒の猶予も入れる。openには-nを付け、Launch Servicesが
+    // 「まだ起動中」とみなして古いプロセスを前面に出してしまわないよう、
+    // 必ず新規プロセスとして起動を強制する。
     const script = `#!/bin/bash
 while kill -0 ${pid} 2>/dev/null; do sleep 0.3; done
+sleep 1
 rm -rf "${backupPath}"
 mv "${oldAppPath}" "${backupPath}"
 mv "${newAppPath}" "${oldAppPath}"
-open "${oldAppPath}"
+open -n "${oldAppPath}"
 rm -rf "${workDir}"
 `;
     await fs.writeFile(scriptPath, script, { mode: 0o755 });
@@ -147,7 +152,11 @@ rmdir /s /q "${workDir}"
 function cleanupBackupIfPresent() {
   const backupPath = `${currentAppDir()}.backup`;
   if (fssync.existsSync(backupPath)) {
-    fssync.rmSync(backupPath, { recursive: true, force: true });
+    try {
+      fssync.rmSync(backupPath, { recursive: true, force: true });
+    } catch (err) {
+      console.error('前回更新のバックアップ削除に失敗しました:', err);
+    }
   }
 }
 
