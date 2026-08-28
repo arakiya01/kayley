@@ -157,13 +157,22 @@ rmdir /s /q "${workDir}"
 
 function cleanupBackupIfPresent() {
   const backupPath = `${currentAppDir()}.backup`;
-  if (fssync.existsSync(backupPath)) {
+  if (!fssync.existsSync(backupPath)) return;
+  // 直前まで旧プロセスの後始末（ヘルパープロセスがファイルを掴んだままになる等）が
+  // 終わりきっていないタイミングだと、削除がEBUSY等で一時的に失敗することがある。
+  // 起動直後の一度きりの失敗で諦めず、少し間隔を空けて数回リトライする。
+  const attempt = (retriesLeft) => {
     try {
       fssync.rmSync(backupPath, { recursive: true, force: true });
     } catch (err) {
-      console.error('前回更新のバックアップ削除に失敗しました:', err);
+      if (retriesLeft > 0) {
+        setTimeout(() => attempt(retriesLeft - 1), 1000);
+      } else {
+        console.error('前回更新のバックアップ削除に失敗しました:', err);
+      }
     }
-  }
+  };
+  attempt(5);
 }
 
 module.exports = { compareVersions, checkForUpdate, applyUpdate, cleanupBackupIfPresent };
